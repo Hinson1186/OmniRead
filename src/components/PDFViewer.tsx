@@ -7,6 +7,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pd
 interface PDFViewerProps {
   file: File;
   pageNumber: number;
+  scale: number;
+  isDarkMode: boolean;
   onDocumentLoad: (numPages: number) => void;
 }
 
@@ -14,7 +16,7 @@ export interface PDFViewerRef {
   extractText: (maxPages?: number) => Promise<string>;
 }
 
-export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageNumber, onDocumentLoad }, ref) => {
+export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageNumber, scale, isDarkMode, onDocumentLoad }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
@@ -62,7 +64,11 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
 
       try {
         const page = await pdf.getPage(pageNumber);
-        const viewport = page.getViewport({ scale: 1.5 });
+        const outputScale = window.devicePixelRatio || 1;
+        
+        // Use a higher scale for the internal canvas resolution
+        const viewport = page.getViewport({ scale: scale * outputScale });
+        const cssViewport = page.getViewport({ scale: scale });
         
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
@@ -70,6 +76,8 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
 
         canvas.height = viewport.height;
         canvas.width = viewport.width;
+        canvas.style.height = `${cssViewport.height}px`;
+        canvas.style.width = `${cssViewport.width}px`;
 
         // Render PDF page into canvas context
         const renderContext = {
@@ -85,8 +93,8 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
         
         // Clear existing text layer
         textLayerRef.current.innerHTML = '';
-        textLayerRef.current.style.height = `${viewport.height}px`;
-        textLayerRef.current.style.width = `${viewport.width}px`;
+        textLayerRef.current.style.height = `${cssViewport.height}px`;
+        textLayerRef.current.style.width = `${cssViewport.width}px`;
 
         // In pdfjs-dist v4, renderTextLayer might be a standalone function or part of the bundle
         // We'll try to find it on the pdfjs object or use the TextLayer class if needed
@@ -96,7 +104,7 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
           await renderTextLayerFn({
             textContentSource: textContent,
             container: textLayerRef.current,
-            viewport: viewport,
+            viewport: cssViewport,
           }).promise;
         } else {
           console.warn('renderTextLayer not found on pdfjs object, attempting fallback');
@@ -104,7 +112,7 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
           const textLayer = new (pdfjs as any).TextLayer({
             textContentSource: textContent,
             container: textLayerRef.current,
-            viewport: viewport,
+            viewport: cssViewport,
           });
           await textLayer.render();
         }
@@ -125,16 +133,16 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, pageN
         renderTask.cancel();
       }
     };
-  }, [pdf, pageNumber]);
+  }, [pdf, pageNumber, scale]);
 
   return (
-    <div className="relative flex justify-center bg-[#1A1A1A] p-8 min-h-full overflow-auto">
+    <div className={`relative flex justify-center p-8 min-h-full overflow-auto ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'}`}>
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#0A0A0A]/50 backdrop-blur-sm z-20">
+        <div className={`absolute inset-0 flex items-center justify-center backdrop-blur-sm z-20 ${isDarkMode ? 'bg-[#0A0A0A]/50' : 'bg-white/50'}`}>
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
         </div>
       )}
-      <div className="relative shadow-2xl shadow-black/50">
+      <div className={`relative shadow-2xl ${isDarkMode ? 'shadow-black/50' : 'shadow-gray-400/30'}`}>
         <canvas ref={canvasRef} className="block" />
         <div 
           ref={textLayerRef} 

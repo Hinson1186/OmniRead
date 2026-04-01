@@ -21,10 +21,27 @@ import {
   Sparkles, 
   Tag,
   Upload,
-  X
+  X,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Maximize,
+  Minimize,
+  Trash2,
+  Moon,
+  Sun,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { PDFViewer, PDFViewerRef } from './components/PDFViewer';
 import { getSupabase, KnowledgeTag } from './lib/supabase';
 import { generateAiResponse, extractConcept, extractTopics } from './lib/gemini';
@@ -35,27 +52,146 @@ interface ChatMessage {
   text: string;
 }
 
-// --- Dummy Data ---
-const DUMMY_TAGS: KnowledgeTag[] = [
-  { id: '1', tag_name: 'Linear Algebra', category: 'Mathematics', mastery_score: 85 },
-  { id: '2', tag_name: 'Calculus II', category: 'Mathematics', mastery_score: 70 },
-  { id: '3', tag_name: 'Data Structures', category: 'Computer Science', mastery_score: 90 },
-  { id: '4', tag_name: 'React Hooks', category: 'Web Development', mastery_score: 95 },
-  { id: '5', tag_name: 'Quantum Mechanics', category: 'Physics', mastery_score: 60 },
-];
-
-const CATEGORIES = ['Mathematics', 'Computer Science', 'Web Development', 'Physics', 'History'];
-
 export default function App() {
   const [isDragging, setIsDragging] = useState(false);
-  const [tags, setTags] = useState<KnowledgeTag[]>(DUMMY_TAGS);
+  const [knowledgeTags, setKnowledgeTags] = useState<KnowledgeTag[]>([]);
+  const [isKbLoading, setIsKbLoading] = useState(true);
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopic, setNewTopic] = useState({ category: '', tag_name: '' });
+  const [isAddingTopic, setIsAddingTopic] = useState(false);
   
   // PDF State
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
+  const [scale, setScale] = useState(1.5);
   const [selectedText, setSelectedText] = useState('');
   const pdfViewerRef = useRef<PDFViewerRef>(null);
+
+  // Sidebar State
+  const [leftWidth, setLeftWidth] = useState(288); // 72 * 4
+  const [rightWidth, setRightWidth] = useState(320); // 80 * 4
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+
+  // Modals State
+  const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // Dark Mode Effect
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  // Fetch Knowledge Tags
+  const fetchKnowledgeTags = async () => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      setIsKbLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('knowledge_tags')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setKnowledgeTags(data || []);
+    } catch (err) {
+      console.error('Error fetching knowledge tags:', err);
+      toast.error('Failed to load knowledge base');
+    } finally {
+      setIsKbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchKnowledgeTags();
+  }, []);
+
+  // Grouping Logic
+  const groupedKnowledge = React.useMemo(() => {
+    const groups: Record<string, { tags: KnowledgeTag[], averageMastery: number }> = {};
+    
+    knowledgeTags.forEach(tag => {
+      if (!groups[tag.category]) {
+        groups[tag.category] = { tags: [], averageMastery: 0 };
+      }
+      groups[tag.category].tags.push(tag);
+    });
+
+    Object.keys(groups).forEach(category => {
+      const categoryTags = groups[category].tags;
+      const totalMastery = categoryTags.reduce((sum, t) => sum + (t.mastery_score || 0), 0);
+      groups[category].averageMastery = Math.round(totalMastery / categoryTags.length);
+    });
+
+    return groups;
+  }, [knowledgeTags]);
+
+  // CRUD Operations
+  const handleDeleteTag = async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    try {
+      const { error } = await supabase
+        .from('knowledge_tags')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setKnowledgeTags(prev => prev.filter(t => t.id !== id));
+      toast.success('Topic removed');
+    } catch (err) {
+      console.error('Error deleting tag:', err);
+      toast.error('Failed to delete topic');
+    }
+  };
+
+  const handleAddTopic = async () => {
+    if (!newTopic.category.trim() || !newTopic.tag_name.trim()) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    setIsAddingTopic(true);
+    try {
+      const { data, error } = await supabase
+        .from('knowledge_tags')
+        .insert([{
+          category: newTopic.category.trim(),
+          tag_name: newTopic.tag_name.trim(),
+          mastery_score: 0
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      setKnowledgeTags(prev => [data, ...prev]);
+      setNewTopic({ category: '', tag_name: '' });
+      setShowAddTopic(false);
+      toast.success('Topic added to knowledge base');
+    } catch (err) {
+      console.error('Error adding topic:', err);
+      toast.error('Failed to add topic');
+    } finally {
+      setIsAddingTopic(false);
+    }
+  };
 
   // AI State
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -112,6 +248,35 @@ export default function App() {
     }
   };
 
+  // Sidebar Resizing Logic
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(200, Math.min(500, e.clientX));
+        setLeftWidth(newWidth);
+      }
+      if (isResizingRight) {
+        const newWidth = Math.max(250, Math.min(600, window.innerWidth - e.clientX));
+        setRightWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingLeft, isResizingRight]);
+
   const handleTextSelection = () => {
     const selection = window.getSelection();
     const text = selection ? selection.toString().trim() : '';
@@ -159,11 +324,10 @@ export default function App() {
             if (error) throw error;
             toast.success("Tag saved to your Knowledge Base!");
             // Refresh tags
-            const { data } = await supabase.from('knowledge_tags').select('*');
-            if (data) setTags(data);
+            fetchKnowledgeTags();
           } else {
             toast.info("Supabase not connected. Tag simulated.");
-            setTags(prev => [...prev, { id: Date.now().toString(), ...concept, mastery_score: 10 }]);
+            setKnowledgeTags(prev => [...prev, { id: Date.now().toString(), ...concept, mastery_score: 10 }]);
           }
         } catch (err) {
           console.error("Save error:", err);
@@ -200,7 +364,7 @@ export default function App() {
       const topics = await extractTopics(extractedText);
       
       const supabase = getSupabase();
-      let userTags: string[] = tags.map(t => t.tag_name.toLowerCase());
+      let userTags: string[] = knowledgeTags.map(t => t.tag_name.toLowerCase());
       
       if (supabase) {
         const { data } = await supabase.from('knowledge_tags').select('tag_name');
@@ -254,87 +418,222 @@ export default function App() {
     setCurrentPage(1);
   };
 
+  const toggleFocusMode = () => {
+    const shouldCollapse = !isLeftCollapsed || !isRightCollapsed;
+    setIsLeftCollapsed(shouldCollapse);
+    setIsRightCollapsed(shouldCollapse);
+  };
+
   return (
-    <div className="flex h-screen w-full bg-[#0A0A0A] text-[#EDEDED] font-sans selection:bg-blue-500/30">
+    <div className={`flex h-screen w-full ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-blue-500/30 overflow-hidden transition-colors duration-300`}>
       
       {/* --- Left Panel: Knowledge Base Dashboard --- */}
-      <aside className="w-72 border-r border-white/5 flex flex-col bg-[#0F0F0F] shrink-0">
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Brain className="w-5 h-5 text-white" />
+      <aside 
+        style={{ width: isLeftCollapsed ? 0 : leftWidth }}
+        className={`relative border-r ${isDarkMode ? 'border-white/5 bg-[#0F0F0F]' : 'border-gray-200 bg-white'} flex flex-col shrink-0 ${!isResizingLeft ? 'transition-[width] duration-300 ease-in-out' : ''} ${isLeftCollapsed ? 'overflow-hidden border-none' : ''}`}
+      >
+        <div className="p-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <h1 className={`font-semibold text-lg tracking-tight whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>OmniRead AI</h1>
           </div>
-          <h1 className="font-semibold text-lg tracking-tight">OmniRead AI</h1>
+          <button 
+            onClick={() => setIsLeftCollapsed(true)}
+            className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="px-4 mb-6">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-white/30' : 'text-gray-400'}`} />
             <input 
               type="text" 
               placeholder="Search knowledge..." 
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+              className={`w-full border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
             />
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 space-y-8">
-          <div>
-            <div className="flex items-center justify-between mb-3 px-2">
-              <h2 className="text-xs font-medium text-white/40 uppercase tracking-wider">Knowledge Base</h2>
-              <button className="p-1 hover:bg-white/5 rounded-md transition-colors">
-                <Plus className="w-3.5 h-3.5 text-white/40" />
-              </button>
+        <nav className="flex-1 overflow-y-auto px-4 space-y-6">
+          {isKbLoading ? (
+            <div className="space-y-6 px-2">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="space-y-3 animate-pulse">
+                  <div className={`h-4 w-24 rounded ${isDarkMode ? 'bg-white/10' : 'bg-gray-200'}`} />
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 2, 3, 4].map(j => (
+                      <div key={j} className={`h-7 w-20 rounded-full ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`} />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-1">
-              {CATEGORIES.map(cat => (
-                <div key={cat} className="group">
-                  <button className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 text-sm transition-colors text-white/70 hover:text-white">
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors" />
-                      <span>{cat}</span>
+          ) : Object.keys(groupedKnowledge).length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12 space-y-4">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+                <Brain className={`w-8 h-8 ${isDarkMode ? 'text-white/20' : 'text-gray-300'}`} />
+              </div>
+              <div className="space-y-2">
+                <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Your second brain is empty!</p>
+                <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
+                  Highlight text in your PDF and click "Save to Knowledge Base" to start building your knowledge.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {Object.entries(groupedKnowledge).map(([category, { tags, averageMastery }]) => (
+                <div key={category} className="space-y-3">
+                  <div className="px-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className={`text-[11px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
+                        {category}
+                      </h3>
+                      <span className={`text-[10px] font-medium ${isDarkMode ? 'text-white/30' : 'text-gray-400'}`}>
+                        {averageMastery}% Mastery
+                      </span>
                     </div>
-                    <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-white/30">
-                      {tags.filter(t => t.category === cat).length}
-                    </span>
-                  </button>
+                    <div className={`h-1 w-full rounded-full overflow-hidden ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${averageMastery}%` }}
+                        className="h-full bg-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 px-1">
+                    {tags.map(tag => (
+                      <div 
+                        key={tag.id}
+                        className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs transition-all hover:-translate-y-0.5 hover:shadow-sm cursor-default ${
+                          isDarkMode 
+                            ? 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10' 
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          tag.mastery_score < 50 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' :
+                          tag.mastery_score < 80 ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.4)]' :
+                          'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]'
+                        }`} />
+                        <span className="font-medium">{tag.tag_name}</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTag(tag.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 -mr-1 hover:text-red-500 transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div>
-            <h2 className="text-xs font-medium text-white/40 uppercase tracking-wider mb-3 px-2">Recent Tags</h2>
-            <div className="flex flex-wrap gap-2 px-2">
-              {tags.map(tag => (
-                <div 
-                  key={tag.id} 
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-white/60 hover:border-blue-500/30 hover:text-blue-400 transition-all cursor-default group"
-                >
-                  <Tag className="w-3 h-3 opacity-40 group-hover:opacity-100" />
-                  {tag.tag_name}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </nav>
 
-        <div className="p-4 border-t border-white/5 space-y-1">
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 text-sm text-white/60 transition-colors">
-            <History className="w-4 h-4" />
-            Study History
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 text-sm text-white/60 transition-colors">
-            <Settings className="w-4 h-4" />
-            Settings
-          </button>
+        <div className={`p-4 border-t space-y-3 ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+          {showAddTopic ? (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-3 rounded-xl border space-y-3 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}
+            >
+              <div className="space-y-2">
+                <input 
+                  type="text"
+                  placeholder="Category (e.g. Physics)"
+                  value={newTopic.category}
+                  onChange={e => setNewTopic(prev => ({ ...prev, category: e.target.value }))}
+                  className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                />
+                <input 
+                  type="text"
+                  placeholder="Topic Name"
+                  value={newTopic.tag_name}
+                  onChange={e => setNewTopic(prev => ({ ...prev, tag_name: e.target.value }))}
+                  className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowAddTopic(false)}
+                  className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40' : 'hover:bg-gray-200 text-gray-500'}`}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleAddTopic}
+                  disabled={isAddingTopic}
+                  className="flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+                >
+                  {isAddingTopic ? 'Adding...' : 'Add Topic'}
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <button 
+              onClick={() => setShowAddTopic(true)}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed text-xs font-medium transition-all ${
+                isDarkMode 
+                  ? 'border-white/10 text-white/40 hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5' 
+                  : 'border-gray-300 text-gray-500 hover:border-blue-500/50 hover:text-blue-600 hover:bg-blue-50'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Topic
+            </button>
+          )}
+
+          <div className="space-y-1">
+            <button 
+              onClick={() => setShowHistory(true)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/60' : 'hover:bg-gray-100 text-gray-600'}`}
+            >
+              <History className="w-4 h-4" />
+              Study History
+            </button>
+            <button 
+              onClick={() => setShowSettings(true)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/60' : 'hover:bg-gray-100 text-gray-600'}`}
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </button>
+          </div>
         </div>
       </aside>
 
+      {/* Left Resize Handle */}
+      {!isLeftCollapsed && (
+        <div 
+          onMouseDown={() => setIsResizingLeft(true)}
+          className="w-1 hover:w-1.5 bg-transparent hover:bg-blue-500/30 cursor-col-resize transition-all z-20"
+        />
+      )}
+
+      {/* Left Expand Button */}
+      {isLeftCollapsed && (
+        <button 
+          onClick={() => setIsLeftCollapsed(false)}
+          className={`absolute left-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-blue-500 transition-all shadow-xl`}
+        >
+          <PanelLeftOpen className="w-5 h-5" />
+        </button>
+      )}
+
       {/* --- Center Panel: PDF Dropzone / Viewer --- */}
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#0A0A0A]">
-        <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#0A0A0A]/80 backdrop-blur-md z-10 shrink-0">
+      <main className={`flex-1 flex flex-col relative overflow-hidden ${isDarkMode ? 'bg-[#0A0A0A]' : 'bg-gray-50'}`}>
+        <header className={`h-16 border-b ${isDarkMode ? 'border-white/5 bg-[#0A0A0A]/80' : 'border-gray-200 bg-white/80'} flex items-center justify-between px-8 backdrop-blur-md z-10 shrink-0`}>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm text-white/40">
+            <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
               <BookOpen className="w-4 h-4" />
               <span className="max-w-[200px] truncate">
                 {pdfFile ? pdfFile.name : 'No document loaded'}
@@ -343,13 +642,48 @@ export default function App() {
             {pdfFile && (
               <button 
                 onClick={closeDocument}
-                className="p-1 hover:bg-white/5 rounded-md text-white/20 hover:text-white/60 transition-colors"
+                className={`p-1 rounded-md ${isDarkMode ? 'hover:bg-white/5 text-white/20 hover:text-white/60' : 'hover:bg-gray-100 text-gray-300 hover:text-gray-600'} transition-colors`}
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
           <div className="flex items-center gap-3">
+            <button 
+              onClick={toggleFocusMode}
+              className={`p-2 rounded-lg ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'} transition-colors`}
+              title={isLeftCollapsed && isRightCollapsed ? "Exit Focus Mode" : "Focus Mode (Collapse All)"}
+            >
+              {isLeftCollapsed && isRightCollapsed ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </button>
+            {pdfFile && (
+              <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 py-1 mr-2">
+                <button 
+                  onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
+                  className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <span className="text-[10px] font-mono w-10 text-center text-white/40">
+                  {Math.round(scale * 100)}%
+                </span>
+                <button 
+                  onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
+                  className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setScale(1.5)}
+                  className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors ml-1"
+                  title="Reset Zoom"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <button 
               onClick={handleWorthIt}
               disabled={!pdfFile || isAiLoading}
@@ -493,34 +827,58 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 className="h-full flex flex-col"
               >
-                <div className="flex-1 overflow-auto bg-[#1A1A1A]">
+                <div className={`flex-1 overflow-auto ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'}`}>
                   <PDFViewer 
                     ref={pdfViewerRef}
                     file={pdfFile} 
                     pageNumber={currentPage} 
+                    scale={scale}
+                    isDarkMode={isDarkMode}
                     onDocumentLoad={(pages) => setNumPages(pages)} 
                   />
                 </div>
                 
                 {/* Pagination Controls */}
-                <div className="h-14 border-t border-white/5 bg-[#0A0A0A] flex items-center justify-center gap-6 shrink-0">
+                <div className={`h-14 border-t ${isDarkMode ? 'border-white/5 bg-[#0A0A0A]' : 'border-gray-200 bg-white'} flex items-center justify-center gap-6 shrink-0`}>
                   <button 
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                    className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-100 text-gray-900'} disabled:opacity-20 disabled:cursor-not-allowed`}
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <span className="text-sm font-medium text-white/60">
-                    Page <span className="text-white">{currentPage}</span> of {numPages}
+                  <span className={`text-sm font-medium ${isDarkMode ? 'text-white/60' : 'text-gray-500'}`}>
+                    Page <span className={isDarkMode ? 'text-white' : 'text-gray-900'}>{currentPage}</span> of {numPages}
                   </span>
                   <button 
                     onClick={() => setCurrentPage(prev => Math.min(numPages, prev + 1))}
                     disabled={currentPage === numPages}
-                    className="p-2 rounded-lg hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                    className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-100 text-gray-900'} disabled:opacity-20 disabled:cursor-not-allowed`}
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
+
+                  <div className={`w-px h-6 mx-2 ${isDarkMode ? 'bg-white/10' : 'bg-gray-200'}`} />
+
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
+                      className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-100 text-gray-900'}`}
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className={`text-xs font-medium w-12 text-center ${isDarkMode ? 'text-white/60' : 'text-gray-500'}`}>
+                      {Math.round(scale * 100)}%
+                    </span>
+                    <button 
+                      onClick={() => setScale(prev => Math.min(4, prev + 0.25))}
+                      className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-100 text-gray-900'}`}
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -528,22 +886,51 @@ export default function App() {
         </div>
       </main>
 
+      {/* Right Resize Handle */}
+      {!isRightCollapsed && (
+        <div 
+          onMouseDown={() => setIsResizingRight(true)}
+          className="w-1 hover:w-1.5 bg-transparent hover:bg-blue-500/30 cursor-col-resize transition-all z-20"
+        />
+      )}
+
+      {/* Right Expand Button */}
+      {isRightCollapsed && (
+        <button 
+          onClick={() => setIsRightCollapsed(false)}
+          className={`absolute right-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-blue-500 transition-all shadow-xl`}
+        >
+          <PanelRightOpen className="w-5 h-5" />
+        </button>
+      )}
+
       {/* --- Right Panel: Sidebar Chat --- */}
-      <aside className="w-80 border-l border-white/5 flex flex-col bg-[#0F0F0F] shrink-0">
-        <header className="p-6 border-b border-white/5 flex items-center gap-3">
-          <MessageSquare className="w-5 h-5 text-blue-500" />
-          <h2 className="font-semibold">Study Assistant</h2>
+      <aside 
+        style={{ width: isRightCollapsed ? 0 : rightWidth }}
+        className={`relative border-l ${isDarkMode ? 'border-white/5 bg-[#0F0F0F]' : 'border-gray-200 bg-white'} flex flex-col shrink-0 ${!isResizingRight ? 'transition-[width] duration-300 ease-in-out' : ''} ${isRightCollapsed ? 'overflow-hidden border-none' : ''}`}
+      >
+        <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+          <div className="flex items-center gap-3">
+            <MessageSquare className="w-5 h-5 text-blue-500" />
+            <h2 className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Assistant</h2>
+          </div>
+          <button 
+            onClick={() => setIsRightCollapsed(true)}
+            className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+          >
+            <PanelRightClose className="w-4 h-4" />
+          </button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {chatHistory.length === 0 && !isAiLoading && (
-            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
-              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-white/20" />
+            <div className={`h-full flex flex-col items-center justify-center text-center space-y-4 ${isDarkMode ? 'opacity-50' : 'opacity-70'}`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+                <Sparkles className={`w-6 h-6 ${isDarkMode ? 'text-white/20' : 'text-gray-300'}`} />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium">Ready to help</p>
-                <p className="text-xs leading-relaxed">
+                <p className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Ready to help</p>
+                <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-white/60' : 'text-gray-500'}`}>
                   Highlight text in your PDF to summarize, explain, or get examples.
                 </p>
               </div>
@@ -559,10 +946,19 @@ export default function App() {
                 className={`max-w-[90%] px-4 py-2.5 rounded-2xl text-sm ${
                   msg.role === 'user' 
                     ? 'bg-blue-600 text-white rounded-tr-none' 
-                    : 'bg-white/5 text-white/80 border border-white/10 rounded-tl-none'
+                    : `${isDarkMode ? 'bg-white/5 text-white/80 border-white/10' : 'bg-gray-100 text-gray-800 border-gray-200'} border rounded-tl-none`
                 }`}
               >
-                {msg.text}
+                <ReactMarkdown 
+                  remarkPlugins={[remarkMath]} 
+                  rehypePlugins={[rehypeKatex]}
+                  components={{
+                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                    code: ({ children }) => <code className="bg-black/20 px-1 rounded font-mono text-xs">{children}</code>,
+                  }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
               </div>
             </div>
           ))}
@@ -580,7 +976,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="p-4 border-t border-white/5">
+        <div className={`p-4 border-t ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
           <div className="relative">
             <textarea 
               value={customQuestion}
@@ -592,7 +988,7 @@ export default function App() {
                 }
               }}
               placeholder="Ask a question..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors resize-none h-24"
+              className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors resize-none h-24 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
             />
             <button 
               onClick={handleCustomQuestion}
@@ -606,6 +1002,169 @@ export default function App() {
       </aside>
 
       <Toaster position="top-center" theme="dark" />
+
+      {/* --- History Modal --- */}
+      <AnimatePresence>
+        {showHistory && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHistory(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`relative w-full max-w-2xl border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-[#141414] border-white/10' : 'bg-white border-gray-200'}`}
+            >
+              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+                <div className="flex items-center gap-3">
+                  <History className="w-5 h-5 text-blue-500" />
+                  <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study History</h2>
+                </div>
+                <button 
+                  onClick={() => setShowHistory(false)}
+                  className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {chatHistory.length === 0 ? (
+                  <div className={`text-center py-12 ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
+                    No history yet. Start studying to see your progress!
+                  </div>
+                ) : (
+                  chatHistory.map((msg, i) => (
+                    <div key={i} className={`p-4 rounded-xl border ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-[10px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded ${msg.role === 'user' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
+                          {msg.role}
+                        </span>
+                      </div>
+                      <p className={`text-sm line-clamp-3 ${isDarkMode ? 'text-white/80' : 'text-gray-700'}`}>{msg.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- Settings Modal --- */}
+      <AnimatePresence>
+        {showSettings && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSettings(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`relative w-full max-w-md border rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#141414] border-white/10' : 'bg-white border-gray-200'}`}
+            >
+              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+                <div className="flex items-center gap-3">
+                  <Settings className="w-5 h-5 text-blue-500" />
+                  <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+                </div>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <h3 className={`text-sm font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-400'} uppercase tracking-wider`}>Appearance</h3>
+                  <div className={`flex items-center justify-between p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'} border`}>
+                    <div className="flex items-center gap-3">
+                      {isDarkMode ? <Moon className="w-4 h-4 text-blue-400" /> : <Sun className="w-4 h-4 text-orange-400" />}
+                      <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Dark Mode</span>
+                    </div>
+                    <button 
+                      onClick={() => setIsDarkMode(!isDarkMode)}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDarkMode ? 'right-1' : 'left-1'}`} />
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className={`text-sm font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-400'} uppercase tracking-wider`}>Data</h3>
+                  <button 
+                    onClick={() => setShowClearConfirm(true)}
+                    className="w-full flex items-center justify-between p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Trash2 className="w-4 h-4" />
+                      <span className="text-sm">Clear Study History</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- Clear Data Confirmation Modal --- */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowClearConfirm(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`relative w-full max-w-sm ${isDarkMode ? 'bg-[#1A1A1A] border-white/10' : 'bg-white border-gray-200'} border rounded-2xl shadow-2xl p-6 text-center`}
+            >
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Clear Study History?</h3>
+              <p className={`text-sm ${isDarkMode ? 'text-white/40' : 'text-gray-500'} mb-6`}>
+                This action cannot be undone. All your chat history and AI summaries will be permanently removed.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowClearConfirm(false)}
+                  className={`flex-1 px-4 py-2 rounded-xl ${isDarkMode ? 'bg-white/5 hover:bg-white/10 text-white/60' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'} transition-colors font-medium`}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    setChatHistory([]);
+                    setShowClearConfirm(false);
+                    toast.success("History cleared successfully");
+                  }}
+                  className="flex-1 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors font-medium"
+                >
+                  Clear All
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
