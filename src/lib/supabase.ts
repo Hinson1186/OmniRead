@@ -22,3 +22,12 @@ export interface KnowledgeTag {
   tag_name: string;
   mastery_score: number;
 }
+
+export interface Bookmark {
+  id: string;
+  file_name: string;
+  page_number: number;
+  text_selection?: string;
+  note?: string;
+  created_at: string;
+}

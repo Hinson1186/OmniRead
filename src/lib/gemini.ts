@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { STUDY_PROMPTS } from "./prompts";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -8,7 +9,7 @@ export const generateAiResponse = async (prompt: string, systemInstruction?: str
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        systemInstruction: systemInstruction || "You are a helpful study assistant.",
+        systemInstruction: systemInstruction || STUDY_PROMPTS.SYSTEM_INSTRUCTION,
       },
     });
     return response.text;
@@ -22,7 +23,7 @@ export const extractConcept = async (text: string) => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Extract the single most important concept or topic from this text. Return ONLY a JSON object with two keys: 'category' (broad subject) and 'tag_name' (specific topic): ${text}`,
+      contents: STUDY_PROMPTS.EXTRACT_CONCEPT(text),
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -46,7 +47,7 @@ export const extractTopics = async (text: string) => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `List the core topics covered in this document. Return ONLY a comma-separated list of topic names: ${text}`,
+      contents: STUDY_PROMPTS.EXTRACT_TOPICS(text),
     });
     return response.text.split(",").map(t => t.trim());
   } catch (error) {
