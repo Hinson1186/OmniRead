@@ -73,6 +73,7 @@ export default function App() {
   const [isKbLoading, setIsKbLoading] = useState(true);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopic, setNewTopic] = useState({ category: '', tag_name: '' });
+  const [selectedBookmarkForView, setSelectedBookmarkForView] = useState<BookmarkItem | null>(null);
   const [isAddingTopic, setIsAddingTopic] = useState(false);
   
   // PDF State
@@ -219,13 +220,18 @@ export default function App() {
     setEditingBookmarkId(null);
   };
 
+  const handleBookmarkClick = (bookmark: BookmarkItem) => {
+    setSelectedBookmarkForView(bookmark);
+  };
+
   const jumpToBookmark = (bookmark: BookmarkItem) => {
     const fileIndex = pdfFiles.findIndex(f => f.name === bookmark.fileName);
     if (fileIndex !== -1) {
       setActiveFileIndex(fileIndex);
       setJumpToPage(bookmark.pageNumber);
+      setSelectedBookmarkForView(null);
     } else {
-      toast.error(`Please upload "${bookmark.fileName}" to view this bookmark.`);
+      toast.error(`Please upload "${bookmark.fileName}" to jump to this page.`);
     }
   };
 
@@ -924,78 +930,94 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3">
                   {bookmarks.sort((a, b) => b.createdAt - a.createdAt).map(bookmark => (
                     <motion.div 
                       layout
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
                       key={bookmark.id}
-                      onClick={() => jumpToBookmark(bookmark)}
-                      className={`group relative p-3 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
+                      onClick={() => handleBookmarkClick(bookmark)}
+                      className={`group relative overflow-hidden rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${
                         isDarkMode 
-                          ? 'bg-white/5 border-white/10 hover:bg-white/10' 
-                          : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm'
+                          ? 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20' 
+                          : 'bg-white border-gray-200 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/5 shadow-sm'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
-                            {bookmark.text ? <StickyNote className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+                      {/* Accent Bar */}
+                      <div className={`absolute top-0 left-0 w-1 h-full ${bookmark.text ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                      
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <div className={`p-1.5 rounded-lg ${
+                                bookmark.text 
+                                  ? (isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
+                                  : (isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-600')
+                              }`}>
+                                {bookmark.text ? <StickyNote className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+                              </div>
+                              <span className={`text-[10px] font-bold tracking-widest uppercase ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
+                                Page {bookmark.pageNumber}
+                              </span>
+                            </div>
+                            <h4 className={`text-[11px] font-bold truncate max-w-[160px] ${isDarkMode ? 'text-white/60' : 'text-gray-600'}`}>
+                              {bookmark.fileName}
+                            </h4>
                           </div>
-                          <span className={`text-[10px] font-bold tracking-widest uppercase flex items-center gap-1.5 ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
-                            {bookmark.text ? <StickyNote className="w-2.5 h-2.5" /> : <Bookmark className="w-2.5 h-2.5 fill-current text-blue-400" />}
-                            Page {bookmark.pageNumber}
-                            {bookmarks.some(b => b.fileName === bookmark.fileName && b.pageNumber === bookmark.pageNumber && !b.text) && (
-                              <span className="w-1 h-1 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.5)]" title="Page is bookmarked" />
-                            )}
-                          </span>
+                          
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                editBookmarkNote(bookmark);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteBookmark(bookmark.id);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-red-500/20 text-white/40 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-600'}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              editBookmarkNote(bookmark);
-                            }}
-                            className="p-1 hover:text-blue-500 transition-all"
-                            title="Edit Note"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteBookmark(bookmark.id);
-                            }}
-                            className="p-1 hover:text-red-500 transition-all"
-                            title="Delete Bookmark"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <p className={`text-xs font-medium line-clamp-1 mb-1 ${isDarkMode ? 'text-white/80' : 'text-gray-700'}`}>
-                        {bookmark.fileName}
-                      </p>
-                      
-                      {bookmark.text && (
-                        <p className={`text-[11px] line-clamp-2 italic border-l-2 pl-2 overflow-hidden text-ellipsis ${isDarkMode ? 'text-white/40 border-white/10' : 'text-gray-500 border-gray-200'}`}>
-                          "{bookmark.text.length > 120 ? bookmark.text.substring(0, 120) + '...' : bookmark.text}"
-                        </p>
-                      )}
+                        
+                        {bookmark.text && (
+                          <div className={`relative mb-3 p-2.5 rounded-lg border-l-2 text-[11px] leading-relaxed italic ${
+                            isDarkMode 
+                              ? 'bg-white/[0.02] border-blue-500/30 text-white/50' 
+                              : 'bg-blue-50/30 border-blue-200 text-gray-600'
+                          }`}>
+                            <span className="line-clamp-3">
+                              "{bookmark.text}"
+                            </span>
+                          </div>
+                        )}
 
-                      {bookmark.note && (
-                        <p className={`text-[11px] font-medium mt-2 p-2 rounded-lg ${isDarkMode ? 'bg-blue-500/10 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
-                          {bookmark.note}
-                        </p>
-                      )}
-                      
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className={`text-[9px] ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
-                          {new Date(bookmark.createdAt).toLocaleDateString()}
-                        </span>
-                        <ChevronRight className={`w-3 h-3 transition-transform group-hover:translate-x-1 ${isDarkMode ? 'text-white/20' : 'text-gray-300'}`} />
+                        {bookmark.note && (
+                          <div className={`p-2.5 rounded-lg text-[11px] font-medium ${
+                            isDarkMode ? 'bg-white/5 text-blue-300' : 'bg-blue-50 text-blue-700'
+                          }`}>
+                            {bookmark.note}
+                          </div>
+                        )}
+                        
+                        <div className="mt-3 pt-3 border-t border-dashed flex items-center justify-between opacity-60 group-hover:opacity-100 transition-opacity">
+                          <span className={`text-[9px] font-medium ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
+                            {new Date(bookmark.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                            View Details
+                            <ChevronRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   ))}
@@ -1792,6 +1814,125 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {selectedBookmarkForView && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedBookmarkForView(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className={`relative w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-[#0F0F0F] border-white/10' : 'bg-white border-gray-200'} border rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)]`}
+            >
+              {/* Header */}
+              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    selectedBookmarkForView.text 
+                      ? (isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
+                      : (isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-600')
+                  }`}>
+                    {selectedBookmarkForView.text ? <StickyNote className="w-6 h-6" /> : <Bookmark className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {selectedBookmarkForView.text ? 'Saved Selection' : 'Page Bookmark'}
+                    </h3>
+                    <p className={`text-xs font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
+                      {selectedBookmarkForView.fileName} • Page {selectedBookmarkForView.pageNumber}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedBookmarkForView(null)}
+                  className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+                {selectedBookmarkForView.text && (
+                  <div className="space-y-3">
+                    <h4 className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
+                      Selected Content
+                    </h4>
+                    <div className={`relative p-6 rounded-2xl border-l-4 text-sm leading-relaxed ${
+                      isDarkMode 
+                        ? 'bg-white/[0.03] border-blue-500/50 text-white/80' 
+                        : 'bg-blue-50/30 border-blue-200 text-gray-700'
+                    }`}>
+                      <div className="absolute -top-3 -left-2 opacity-10">
+                        <MessageSquare className="w-12 h-12" />
+                      </div>
+                      <p className="relative z-10 whitespace-pre-wrap italic">
+                        "{selectedBookmarkForView.text}"
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
+                      Personal Note
+                    </h4>
+                    <button 
+                      onClick={() => editBookmarkNote(selectedBookmarkForView)}
+                      className="text-[10px] font-bold text-blue-500 hover:underline"
+                    >
+                      Edit Note
+                    </button>
+                  </div>
+                  <div className={`p-6 rounded-2xl border min-h-[100px] ${
+                    isDarkMode 
+                      ? 'bg-white/[0.02] border-white/5 text-white/70' 
+                      : 'bg-gray-50 border-gray-100 text-gray-600'
+                  }`}>
+                    {selectedBookmarkForView.note ? (
+                      <p className="text-sm leading-relaxed">{selectedBookmarkForView.note}</p>
+                    ) : (
+                      <p className="text-sm italic opacity-40">No note added to this bookmark yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className={`p-6 border-t flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
+                <span className={`text-[10px] font-medium ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
+                  Saved on {new Date(selectedBookmarkForView.createdAt).toLocaleString()}
+                </span>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      deleteBookmark(selectedBookmarkForView.id);
+                      setSelectedBookmarkForView(null);
+                    }}
+                    className={`px-4 py-2 text-xs font-bold rounded-xl transition-colors ${isDarkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                  >
+                    Delete
+                  </button>
+                  <button 
+                    onClick={() => jumpToBookmark(selectedBookmarkForView)}
+                    className="px-6 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Open Original File
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
