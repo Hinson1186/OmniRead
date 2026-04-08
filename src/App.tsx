@@ -454,8 +454,16 @@ export default function App() {
 
   // AI State
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [isAiFullScreen, setIsAiFullScreen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [customQuestion, setCustomQuestion] = useState('');
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, isAiLoading]);
 
   // Supabase connection check (skeleton)
   useEffect(() => {
@@ -1473,12 +1481,23 @@ export default function App() {
             <MessageSquare className="w-5 h-5 text-blue-500" />
             <h2 className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Assistant</h2>
           </div>
-          <button 
-            onClick={() => setIsRightCollapsed(true)}
-            className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
-          >
-            <PanelRightClose className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!isAiFullScreen && (
+              <button 
+                onClick={() => setIsAiFullScreen(true)}
+                className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                title="Enter Full Screen"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            )}
+            <button 
+              onClick={() => setIsRightCollapsed(true)}
+              className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -1553,6 +1572,7 @@ export default function App() {
               </div>
             </div>
           )}
+          <div ref={chatEndRef} />
         </div>
 
         <div className={`p-4 border-t ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
@@ -1585,7 +1605,7 @@ export default function App() {
       {/* --- Bookmark Note Modal --- */}
       <AnimatePresence>
         {showNoteModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1808,6 +1828,151 @@ export default function App() {
                 >
                   Clear All
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- AI Full Screen Mode --- */}
+      <AnimatePresence>
+        {isAiFullScreen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 md:p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAiFullScreen(false)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className={`relative w-full max-w-5xl h-full flex flex-col border rounded-3xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#0F0F0F] border-white/10' : 'bg-white border-gray-200'}`}
+            >
+              <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center">
+                    <MessageSquare className="w-6 h-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Discussion</h2>
+                    <p className={`text-xs font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>Full Screen Mode</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setShowClearConfirm(true)}
+                    className={`p-2.5 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-red-500/10 text-white/40 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-600'}`}
+                    title="Clear History"
+                  >
+                    <History className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => setIsAiFullScreen(false)}
+                    className={`p-2.5 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-900'}`}
+                  >
+                    <Minimize className="w-6 h-6" />
+                  </button>
+                </div>
+              </header>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+                {chatHistory.length === 0 && !isAiLoading && (
+                  <div className="h-full flex flex-col items-center justify-center text-center space-y-6 max-w-md mx-auto">
+                    <div className="w-20 h-20 rounded-3xl bg-blue-500/10 flex items-center justify-center">
+                      <Sparkles className="w-10 h-10 text-blue-500 animate-pulse" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Deep Study Session</h3>
+                      <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
+                        Ask complex questions, explore theories, or dive deep into your study materials in this focused environment.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {chatHistory.map((msg, i) => (
+                  <div 
+                    key={i} 
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                  >
+                    <div 
+                      className={`max-w-[85%] px-6 py-4 rounded-3xl text-base shadow-sm ${
+                        msg.role === 'user' 
+                          ? 'bg-blue-600 text-white rounded-tr-none' 
+                          : `${isDarkMode ? 'bg-white/[0.03] text-white/90 border-white/10' : 'bg-gray-50 text-gray-800 border-gray-200'} border rounded-tl-none`
+                      }`}
+                    >
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkMath]} 
+                        rehypePlugins={[rehypeKatex]}
+                        components={{
+                          p: ({ children }) => <p className="mb-4 last:mb-0 leading-relaxed">{children}</p>,
+                          code: ({ children }) => (
+                            <code className={`px-1.5 py-0.5 rounded font-mono text-sm ${isDarkMode ? 'bg-white/10 text-blue-300' : 'bg-gray-200 text-blue-700'}`}>
+                              {children}
+                            </code>
+                          ),
+                          pre: ({ children }) => (
+                            <pre className={`p-6 rounded-2xl font-mono text-sm overflow-x-auto my-6 border ${isDarkMode ? 'bg-black/40 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
+                              {children}
+                            </pre>
+                          ),
+                          ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-3">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-3">{children}</ol>,
+                          li: ({ children }) => <li className="text-base">{children}</li>,
+                          h1: ({ children }) => <h1 className="text-2xl font-bold mb-6 mt-8 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-xl font-bold mb-4 mt-6 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-lg font-bold mb-3 mt-5 first:mt-0">{children}</h3>,
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
+
+                {isAiLoading && (
+                  <div className="flex items-start">
+                    <div className={`px-6 py-4 rounded-3xl rounded-tl-none flex items-center gap-3 ${isDarkMode ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
+                      <div className="flex gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <span className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>AI is thinking...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className={`p-8 border-t ${isDarkMode ? 'border-white/5 bg-white/[0.01]' : 'border-gray-100 bg-gray-50/30'}`}>
+                <div className="max-w-4xl mx-auto relative">
+                  <textarea 
+                    value={customQuestion}
+                    onChange={(e) => setCustomQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleCustomQuestion();
+                      }
+                    }}
+                    placeholder="Ask anything about the topic..."
+                    className={`w-full pl-6 pr-16 py-4 rounded-2xl border focus:outline-none focus:border-blue-500/50 transition-all resize-none h-16 max-h-32 ${
+                      isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900 shadow-sm'
+                    }`}
+                  />
+                  <button 
+                    onClick={handleCustomQuestion}
+                    disabled={!customQuestion.trim() || isAiLoading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20"
+                  >
+                    <Rocket className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
