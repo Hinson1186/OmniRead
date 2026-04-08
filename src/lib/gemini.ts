@@ -1,7 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { STUDY_PROMPTS } from "./prompts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getApiKey = () => {
+  const key = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
+  return key;
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() || '' });
 
 export const generateAiResponse = async (prompt: string, systemInstruction?: string) => {
   try {

@@ -66,7 +66,10 @@ interface BookmarkItem {
 
 export default function App() {
   const [isDragging, setIsDragging] = useState(false);
-  const [knowledgeTags, setKnowledgeTags] = useState<KnowledgeTag[]>([]);
+  const [knowledgeTags, setKnowledgeTags] = useState<KnowledgeTag[]>(() => {
+    const saved = localStorage.getItem('omniread_knowledge');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [isKbLoading, setIsKbLoading] = useState(true);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopic, setNewTopic] = useState({ category: '', tag_name: '' });
@@ -114,6 +117,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('omniread_bookmarks', JSON.stringify(bookmarks));
   }, [bookmarks]);
+
+  useEffect(() => {
+    localStorage.setItem('omniread_knowledge', JSON.stringify(knowledgeTags));
+  }, [knowledgeTags]);
 
   const toggleBookmark = async (pageNumber: number) => {
     const fileName = pdfFiles[activeFileIndex]?.name;
@@ -258,11 +265,23 @@ export default function App() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setKnowledgeTags(data || []);
-    } catch (err) {
+      if (error) {
+        // If it's a permission error or table not found, log it but don't necessarily crash the UI experience
+        console.error('Supabase fetch error:', error);
+        if (error.code === 'PGRST116' || error.message.includes('relation "knowledge_tags" does not exist')) {
+          console.warn('Knowledge tags table not found, using local storage.');
+        } else {
+          throw error;
+        }
+      } else if (data) {
+        setKnowledgeTags(data);
+      }
+    } catch (err: any) {
       console.error('Error fetching knowledge tags:', err);
-      toast.error('Failed to load knowledge base');
+      // Only show toast if it's not a common initialization/network error
+      if (err.message !== 'Failed to fetch') {
+        toast.error(`Sync Error: ${err.message || 'Check your Supabase connection'}`);
+      }
     } finally {
       setIsKbLoading(false);
     }
@@ -287,9 +306,14 @@ export default function App() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      
-      if (data && data.length > 0) {
+      if (error) {
+        console.error('Supabase bookmarks error:', error);
+        if (error.code === 'PGRST116' || error.message.includes('relation "bookmarks" does not exist')) {
+          console.warn('Bookmarks table not found, using local storage.');
+        } else {
+          throw error;
+        }
+      } else if (data && data.length > 0) {
         const mappedBookmarks: BookmarkItem[] = data.map(b => ({
           id: b.id,
           fileName: b.file_name,
@@ -300,8 +324,11 @@ export default function App() {
         }));
         setBookmarks(mappedBookmarks);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching bookmarks:', err);
+      if (err.message !== 'Failed to fetch') {
+        toast.error(`Sync Error: ${err.message || 'Check your Supabase connection'}`);
+      }
     } finally {
       setIsBookmarksLoading(false);
     }
@@ -330,49 +357,87 @@ export default function App() {
   // CRUD Operations
   const handleDeleteTag = async (id: string) => {
     const supabase = getSupabase();
-    if (!supabase) return;
+    
+    setKnowledgeTags(prev => prev.filter(t => t.id !== id));
+    toast.success('Topic removed');
 
-    try {
-      const { error } = await supabase
-        .from('knowledge_tags')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      setKnowledgeTags(prev => prev.filter(t => t.id !== id));
-      toast.success('Topic removed');
-    } catch (err) {
-      console.error('Error deleting tag:', err);
-      toast.error('Failed to delete topic');
+    if (supabase) {
+      try {
+        const { error } = await supabase
+          .from('knowledge_tags')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        console.error('Error deleting tag:', err);
+      }
     }
   };
 
   const handleAddTopic = async () => {
-    if (!newTopic.category.trim() || !newTopic.tag_name.trim()) {
-      toast.error('Please fill in all fields');
+    if (!newTopic.tag_name.trim()) {
+      toast.error('Please enter a topic name');
       return;
     }
 
-    const supabase = getSupabase();
-    if (!supabase) return;
+    const tagNameInput = newTopic.tag_name.trim();
+
+    // Duplicate Check
+    const isDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === tagNameInput.toLowerCase());
+    if (isDuplicate) {
+      toast.error(`"${tagNameInput}" is already in your Knowledge Base!`);
+      return;
+    }
 
     setIsAddingTopic(true);
     try {
-      const { data, error } = await supabase
-        .from('knowledge_tags')
-        .insert([{
-          category: newTopic.category.trim(),
-          tag_name: newTopic.tag_name.trim(),
-          mastery_score: 0
-        }])
-        .select()
-        .single();
+      // Use AI to "think" of the actual topic name and category
+      let concept;
+      try {
+        concept = await extractConcept(tagNameInput);
+      } catch (e) {
+        // Fallback
+        concept = { category: 'General', tag_name: tagNameInput };
+      }
 
-      if (error) throw error;
-      setKnowledgeTags(prev => [data, ...prev]);
+      const finalTagName = concept.tag_name || tagNameInput;
+      const finalCategory = concept.category || 'General';
+
+      // Final Duplicate Check after AI refinement
+      const isRefinedDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === finalTagName.toLowerCase());
+      if (isRefinedDuplicate) {
+        toast.error(`"${finalTagName}" is already in your Knowledge Base!`);
+        return;
+      }
+
+      const supabase = getSupabase();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('knowledge_tags')
+          .insert([{
+            category: finalCategory,
+            tag_name: finalTagName,
+            mastery_score: 0
+          }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        setKnowledgeTags(prev => [data, ...prev]);
+      } else {
+        const localTopic = {
+          id: Date.now().toString(),
+          category: finalCategory,
+          tag_name: finalTagName,
+          mastery_score: 0,
+          created_at: new Date().toISOString()
+        };
+        setKnowledgeTags(prev => [localTopic, ...prev]);
+      }
+
       setNewTopic({ category: '', tag_name: '' });
       setShowAddTopic(false);
-      toast.success('Topic added to knowledge base');
+      toast.success(`Added "${finalTagName}" to ${finalCategory}`);
     } catch (err) {
       console.error('Error adding topic:', err);
       toast.error('Failed to add topic');
@@ -512,46 +577,54 @@ export default function App() {
         addSelectionBookmark();
         return;
       case 'Save to Knowledge Base':
+        // Validation added
         try {
           const savePromise = (async () => {
             let concept;
             try {
               concept = await extractConcept(selectedText);
             } catch (e) {
-              // Fallback if extraction fails
               concept = { category: 'General', tag_name: selectedText.slice(0, 30) + (selectedText.length > 30 ? '...' : '') };
             }
 
             if (!concept || !concept.tag_name) throw new Error("Could not extract concept");
             
+            const tagName = concept.tag_name.trim();
+            const isValidTopic = tagName.length >= 2 && /[a-zA-Z]/.test(tagName);
+            
+            if (!isValidTopic) {
+              throw new Error("This doesn't look like a meaningful topic. Try selecting more context.");
+            }
+
+            const isDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === tagName.toLowerCase());
+            if (isDuplicate) {
+              throw new Error(`"${tagName}" is already in your Knowledge Base!`);
+            }
+            
             const supabase = getSupabase();
             if (supabase) {
               const { error } = await supabase.from('knowledge_tags').insert({
                 category: concept.category || 'General',
-                tag_name: concept.tag_name,
+                tag_name: tagName,
                 mastery_score: 10
               });
               if (error) throw error;
               await fetchKnowledgeTags();
             } else {
-              setKnowledgeTags(prev => {
-                const exists = prev.some(t => t.tag_name.toLowerCase() === concept.tag_name.toLowerCase());
-                if (exists) return prev;
-                return [{ 
-                  id: Date.now().toString(), 
-                  category: concept.category || 'General',
-                  tag_name: concept.tag_name,
-                  mastery_score: 10 
-                }, ...prev];
-              });
+              setKnowledgeTags(prev => [{ 
+                id: Date.now().toString(), 
+                category: concept.category || 'General',
+                tag_name: tagName,
+                mastery_score: 10 
+              }, ...prev]);
             }
-            return concept.tag_name;
+            return tagName;
           })();
 
           toast.promise(savePromise, {
             loading: 'Extracting and saving concept...',
             success: (tagName) => `"${tagName}" saved to your Knowledge Base!`,
-            error: 'Failed to save concept.'
+            error: (err) => err.message || 'Failed to save concept.'
           });
 
           await savePromise;
@@ -763,6 +836,17 @@ export default function App() {
                     <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
                       Highlight text in your PDF and click "Save to Knowledge Base" to start building your knowledge.
                     </p>
+                    {!getSupabase() && (
+                      <div className={`mt-4 p-3 rounded-xl border text-[10px] leading-relaxed ${
+                        isDarkMode ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-200/60' : 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                      }`}>
+                        <div className="flex items-center gap-2 mb-1 font-bold uppercase tracking-wider">
+                          <AlertTriangle className="w-3 h-3" />
+                          Backend Not Linked
+                        </div>
+                        Your knowledge base is currently stored locally in your browser. To sync across devices, please configure Supabase in the Secrets panel.
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -931,18 +1015,15 @@ export default function App() {
               <div className="space-y-2">
                 <input 
                   type="text"
-                  placeholder="Category (e.g. Physics)"
-                  value={newTopic.category}
-                  onChange={e => setNewTopic(prev => ({ ...prev, category: e.target.value }))}
-                  className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
-                />
-                <input 
-                  type="text"
-                  placeholder="Topic Name"
+                  placeholder="What do you want to learn? (e.g. Photosynthesis)"
                   value={newTopic.tag_name}
                   onChange={e => setNewTopic(prev => ({ ...prev, tag_name: e.target.value }))}
-                  className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTopic()}
+                  className={`w-full px-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
                 />
+                <p className={`text-[10px] px-1 ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
+                  AI will automatically categorize and refine the topic name.
+                </p>
               </div>
               <div className="flex gap-2">
                 <button 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import * as pdfjs from 'pdfjs-dist';
-import { Bookmark } from 'lucide-react';
+import { Bookmark, Loader2, Search } from 'lucide-react';
+import { createWorker } from 'tesseract.js';
 
 // Set up the worker
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
@@ -20,6 +21,8 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
   const textLayerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
+  const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -91,20 +94,74 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
         textLayerRef.current.style.height = `${cssViewport.height}px`;
         textLayerRef.current.style.width = `${cssViewport.width}px`;
 
-        const renderTextLayerFn = (pdfjs as any).renderTextLayer;
-        if (typeof renderTextLayerFn === 'function') {
-          await renderTextLayerFn({
-            textContentSource: textContent,
-            container: textLayerRef.current,
-            viewport: cssViewport,
-          }).promise;
+        if (textContent.items.length > 0) {
+          const renderTextLayerFn = (pdfjs as any).renderTextLayer;
+          if (typeof renderTextLayerFn === 'function') {
+            await renderTextLayerFn({
+              textContentSource: textContent,
+              container: textLayerRef.current,
+              viewport: cssViewport,
+            }).promise;
+          } else {
+            const textLayer = new (pdfjs as any).TextLayer({
+              textContentSource: textContent,
+              container: textLayerRef.current,
+              viewport: cssViewport,
+            });
+            await textLayer.render();
+          }
         } else {
-          const textLayer = new (pdfjs as any).TextLayer({
-            textContentSource: textContent,
-            container: textLayerRef.current,
-            viewport: cssViewport,
-          });
-          await textLayer.render();
+          // No text found, try OCR
+          console.log(`No text found on page ${pageNumber}, starting OCR...`);
+          setIsOcrRunning(true);
+          setOcrProgress(0);
+          
+          try {
+            const worker = await createWorker(['eng'], 1, {
+              logger: m => {
+                if (m.status === 'recognizing text') {
+                  setOcrProgress(Math.round(m.progress * 100));
+                }
+              }
+            });
+            
+            const { data } = await worker.recognize(canvas);
+            await worker.terminate();
+            
+            if (isCancelled) return;
+
+            // Create a custom text layer from OCR results
+            textLayerRef.current.innerHTML = '';
+            
+            // We need to scale the OCR coordinates back to CSS scale
+            // OCR was done on the high-res canvas (outputScale)
+            const ocrScaleX = cssViewport.width / viewport.width;
+            const ocrScaleY = cssViewport.height / viewport.height;
+
+            (data as any).words.forEach((word: any) => {
+              const span = document.createElement('span');
+              span.textContent = word.text + ' ';
+              span.style.left = `${word.bbox.x0 * ocrScaleX}px`;
+              span.style.top = `${word.bbox.y0 * ocrScaleY}px`;
+              span.style.fontSize = `${(word.bbox.y1 - word.bbox.y0) * ocrScaleY}px`;
+              span.style.position = 'absolute';
+              span.style.whiteSpace = 'pre';
+              span.style.color = 'transparent';
+              span.style.cursor = 'text';
+              span.style.transformOrigin = '0% 0%';
+              
+              // Approximate width scaling
+              const wordWidth = (word.bbox.x1 - word.bbox.x0) * ocrScaleX;
+              // We don't set width directly as it might mess up selection if font-size is different
+              // but we can use transform to match the width if needed
+              
+              textLayerRef.current?.appendChild(span);
+            });
+          } catch (ocrError) {
+            console.error('OCR failed:', ocrError);
+          } finally {
+            setIsOcrRunning(false);
+          }
         }
         setLoading(false);
       } catch (error: any) {
@@ -142,6 +199,32 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
         style={{ lineHeight: 1 }}
       />
       
+      {/* OCR Loading Overlay */}
+      {isOcrRunning && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[2px]">
+          <div className={`p-4 rounded-2xl flex flex-col items-center gap-3 shadow-2xl ${isDarkMode ? 'bg-[#141414] border border-white/10' : 'bg-white border border-gray-200'}`}>
+            <div className="relative">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              <Search className="w-4 h-4 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div className="text-center">
+              <p className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                Running OCR
+              </p>
+              <p className={`text-[10px] font-medium mt-1 ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
+                Making text selectable... {ocrProgress}%
+              </p>
+            </div>
+            <div className={`w-32 h-1 rounded-full overflow-hidden ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+              <div 
+                className="h-full bg-blue-500 transition-all duration-300" 
+                style={{ width: `${ocrProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bookmark Button */}
       <button
         onClick={() => onToggleBookmark(pageNumber)}
@@ -191,10 +274,34 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale
       if (!pdf) return '';
       let fullText = '';
       const pagesToExtract = Math.min(pdf.numPages, maxPages);
+      
       for (let i = 1; i <= pagesToExtract; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => (item as any).str).join(' ');
+        let pageText = textContent.items.map((item: any) => (item as any).str).join(' ');
+        
+        if (pageText.trim().length === 0) {
+          // Try OCR for extraction if no text found
+          console.log(`Extracting text via OCR for page ${i}...`);
+          try {
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (context) {
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              await page.render({ canvasContext: context, viewport }).promise;
+              
+              const worker = await createWorker(['eng']);
+              const { data } = await worker.recognize(canvas);
+              await worker.terminate();
+              pageText = data.text;
+            }
+          } catch (ocrError) {
+            console.error(`OCR extraction failed for page ${i}:`, ocrError);
+          }
+        }
+        
         fullText += pageText + '\n';
       }
       return fullText;
