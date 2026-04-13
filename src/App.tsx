@@ -64,6 +64,34 @@ interface BookmarkItem {
   createdAt: number;
 }
 
+// --- Helper Functions ---
+const isDuplicateTag = (newName: string, existingTags: KnowledgeTag[]) => {
+  const normalize = (s: string) => s.toLowerCase().trim().replace(/[^\w\s]/g, '');
+  const n1 = normalize(newName);
+  
+  return existingTags.some(t => {
+    const n2 = normalize(t.tag_name);
+    if (n1 === n2) return true;
+    
+    // Check for singular/plural variations (e.g., "Integrals" vs "Integral")
+    const s1 = n1.endsWith('s') ? n1.slice(0, -1) : n1;
+    const s2 = n2.endsWith('s') ? n2.slice(0, -1) : n2;
+    if (s1 === s2 && s1.length > 3) return true;
+
+    // Handle 'es' (e.g., 'Boxes' vs 'Box')
+    const es1 = n1.endsWith('es') ? n1.slice(0, -2) : n1;
+    const es2 = n2.endsWith('es') ? n2.slice(0, -2) : n2;
+    if (es1 === es2 && es1.length > 3) return true;
+
+    // Handle 'ies' -> 'y' (e.g., 'Properties' vs 'Property')
+    const ies1 = n1.endsWith('ies') ? n1.slice(0, -3) + 'y' : n1;
+    const ies2 = n2.endsWith('ies') ? n2.slice(0, -3) + 'y' : n2;
+    if (ies1 === ies2 && ies1.length > 3) return true;
+
+    return false;
+  });
+};
+
 export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [knowledgeTags, setKnowledgeTags] = useState<KnowledgeTag[]>(() => {
@@ -100,6 +128,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [accentColor, setAccentColor] = useState(() => {
+    return localStorage.getItem('omniread_accent_color') || '#3b82f6';
+  });
   const [leftTab, setLeftTab] = useState<'knowledge' | 'bookmarks'>('knowledge');
   
   // Bookmark Note Modal State
@@ -122,6 +153,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('omniread_knowledge', JSON.stringify(knowledgeTags));
   }, [knowledgeTags]);
+
+  useEffect(() => {
+    localStorage.setItem('omniread_accent_color', accentColor);
+    document.documentElement.style.setProperty('--accent-color', accentColor);
+    
+    // Simple heuristic for foreground color (white or black)
+    const r = parseInt(accentColor.slice(1, 3), 16);
+    const g = parseInt(accentColor.slice(3, 5), 16);
+    const b = parseInt(accentColor.slice(5, 7), 16);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    document.documentElement.style.setProperty('--accent-foreground', brightness > 128 ? '#000000' : '#ffffff');
+  }, [accentColor]);
 
   const toggleBookmark = async (pageNumber: number) => {
     const fileName = pdfFiles[activeFileIndex]?.name;
@@ -389,7 +432,7 @@ export default function App() {
     const tagNameInput = newTopic.tag_name.trim();
 
     // Duplicate Check
-    const isDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === tagNameInput.toLowerCase());
+    const isDuplicate = isDuplicateTag(tagNameInput, knowledgeTags);
     if (isDuplicate) {
       toast.error(`"${tagNameInput}" is already in your Knowledge Base!`);
       return;
@@ -410,7 +453,7 @@ export default function App() {
       const finalCategory = concept.category || 'General';
 
       // Final Duplicate Check after AI refinement
-      const isRefinedDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === finalTagName.toLowerCase());
+      const isRefinedDuplicate = isDuplicateTag(finalTagName, knowledgeTags);
       if (isRefinedDuplicate) {
         toast.error(`"${finalTagName}" is already in your Knowledge Base!`);
         return;
@@ -610,7 +653,7 @@ export default function App() {
               throw new Error("This doesn't look like a meaningful topic. Try selecting more context.");
             }
 
-            const isDuplicate = knowledgeTags.some(t => t.tag_name.toLowerCase() === tagName.toLowerCase());
+            const isDuplicate = isDuplicateTag(tagName, knowledgeTags);
             if (isDuplicate) {
               throw new Error(`"${tagName}" is already in your Knowledge Base!`);
             }
@@ -687,7 +730,16 @@ export default function App() {
         if (data) userTags = data.map(t => t.tag_name.toLowerCase());
       }
 
+      if (userTags.length === 0) {
+        setChatHistory(prev => [...prev, { role: 'model', text: "Your Knowledge Base is empty! I can't calculate overlap yet. Add some topics to your Knowledge Base first so I can tell you if this PDF is worth your time." }]);
+        return;
+      }
+
       const X = topics.length;
+      if (X === 0) {
+        setChatHistory(prev => [...prev, { role: 'model', text: "I couldn't identify any specific topics in this document to compare with your Knowledge Base. Try a different section!" }]);
+        return;
+      }
       const matchedTopics = topics.filter(topic => 
         userTags.some(tag => topic.toLowerCase().includes(tag) || tag.includes(topic.toLowerCase()))
       );
@@ -764,7 +816,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen w-full ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-blue-500/30 overflow-hidden transition-colors duration-300`}>
+    <div className={`flex h-screen w-full ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-accent/30 overflow-hidden transition-colors duration-300`}>
       
       {/* --- Left Panel: Knowledge Base Dashboard --- */}
       <aside 
@@ -773,7 +825,7 @@ export default function App() {
       >
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center shadow-lg shadow-accent/20">
               <Brain className="w-5 h-5 text-white" />
             </div>
             <h1 className={`font-semibold text-lg tracking-tight whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>OmniRead AI</h1>
@@ -819,7 +871,7 @@ export default function App() {
             <input 
               type="text" 
               placeholder="Search knowledge..." 
-              className={`w-full border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+              className={`w-full border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-accent/50 transition-colors ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
             />
           </div>
         </div>
@@ -880,7 +932,7 @@ export default function App() {
                           <motion.div 
                             initial={{ width: 0 }}
                             animate={{ width: `${averageMastery}%` }}
-                            className="h-full bg-blue-500"
+                            className="h-full bg-accent"
                           />
                         </div>
                       </div>
@@ -949,11 +1001,11 @@ export default function App() {
                       className={`group relative overflow-hidden rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${
                         isDarkMode 
                           ? 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20' 
-                          : 'bg-white border-gray-200 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/5 shadow-sm'
+                          : 'bg-white border-gray-200 hover:border-accent/20 hover:shadow-lg hover:shadow-accent/5 shadow-sm'
                       }`}
                     >
                       {/* Accent Bar */}
-                      <div className={`absolute top-0 left-0 w-1 h-full ${bookmark.text ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                      <div className={`absolute top-0 left-0 w-1 h-full ${bookmark.text ? 'bg-accent' : 'bg-amber-500'}`} />
                       
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3 mb-3">
@@ -961,7 +1013,7 @@ export default function App() {
                             <div className="flex items-center gap-2">
                               <div className={`p-1.5 rounded-lg ${
                                 bookmark.text 
-                                  ? (isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
+                                  ? (isDarkMode ? 'bg-accent/20 text-accent' : 'bg-accent/10 text-accent')
                                   : (isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-600')
                               }`}>
                                 {bookmark.text ? <StickyNote className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
@@ -1000,8 +1052,8 @@ export default function App() {
                         {bookmark.text && (
                           <div className={`relative mb-3 p-2.5 rounded-lg border-l-2 text-[11px] leading-relaxed italic ${
                             isDarkMode 
-                              ? 'bg-white/[0.02] border-blue-500/30 text-white/50' 
-                              : 'bg-blue-50/30 border-blue-200 text-gray-600'
+                              ? 'bg-white/[0.02] border-accent/30 text-white/50' 
+                              : 'bg-accent/5 border-accent/20 text-gray-600'
                           }`}>
                             <span className="line-clamp-3">
                               "{bookmark.text}"
@@ -1011,7 +1063,7 @@ export default function App() {
 
                         {bookmark.note && (
                           <div className={`p-2.5 rounded-lg text-[11px] font-medium ${
-                            isDarkMode ? 'bg-white/5 text-blue-300' : 'bg-blue-50 text-blue-700'
+                            isDarkMode ? 'bg-white/5 text-accent' : 'bg-accent/10 text-accent'
                           }`}>
                             {bookmark.note}
                           </div>
@@ -1021,7 +1073,7 @@ export default function App() {
                           <span className={`text-[9px] font-medium ${isDarkMode ? 'text-white/20' : 'text-gray-400'}`}>
                             {new Date(bookmark.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                           </span>
-                          <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                          <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-accent' : 'text-accent'}`}>
                             View Details
                             <ChevronRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
                           </div>
@@ -1049,7 +1101,7 @@ export default function App() {
                   value={newTopic.tag_name}
                   onChange={e => setNewTopic(prev => ({ ...prev, tag_name: e.target.value }))}
                   onKeyDown={e => e.key === 'Enter' && handleAddTopic()}
-                  className={`w-full px-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-blue-500/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                  className={`w-full px-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-accent/50 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
                 />
                 <p className={`text-[10px] px-1 ${isDarkMode ? 'text-white/40' : 'text-gray-500'}`}>
                   AI will automatically categorize and refine the topic name.
@@ -1065,7 +1117,7 @@ export default function App() {
                 <button 
                   onClick={handleAddTopic}
                   disabled={isAddingTopic}
-                  className="flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+                  className="flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-colors disabled:opacity-50"
                 >
                   {isAddingTopic ? 'Adding...' : 'Add Topic'}
                 </button>
@@ -1076,8 +1128,8 @@ export default function App() {
               onClick={() => setShowAddTopic(true)}
               className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed text-xs font-medium transition-all ${
                 isDarkMode 
-                  ? 'border-white/10 text-white/40 hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/5' 
-                  : 'border-gray-300 text-gray-500 hover:border-blue-500/50 hover:text-blue-600 hover:bg-blue-50'
+                  ? 'border-white/10 text-white/40 hover:border-accent/50 hover:text-accent hover:bg-accent/5' 
+                  : 'border-gray-300 text-gray-500 hover:border-accent/50 hover:text-accent hover:bg-accent/5'
               }`}
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1108,7 +1160,7 @@ export default function App() {
       {!isLeftCollapsed && (
         <div 
           onMouseDown={() => setIsResizingLeft(true)}
-          className="w-1 hover:w-1.5 bg-transparent hover:bg-blue-500/30 cursor-col-resize transition-all z-20"
+          className="w-1 hover:w-1.5 bg-transparent hover:bg-accent/30 cursor-col-resize transition-all z-20"
         />
       )}
 
@@ -1116,7 +1168,7 @@ export default function App() {
       {isLeftCollapsed && (
         <button 
           onClick={() => setIsLeftCollapsed(false)}
-          className={`absolute left-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-blue-500 transition-all shadow-xl`}
+          className={`absolute left-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-accent transition-all shadow-xl`}
         >
           <PanelLeftOpen className="w-5 h-5" />
         </button>
@@ -1138,7 +1190,7 @@ export default function App() {
                     key={idx}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer group shrink-0 ${
                       activeFileIndex === idx 
-                        ? (isDarkMode ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-blue-50 text-blue-600 border border-blue-100')
+                        ? (isDarkMode ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-accent/10 text-accent border border-accent/20')
                         : (isDarkMode ? 'text-white/40 hover:text-white/60 hover:bg-white/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50')
                     }`}
                     onClick={() => {
@@ -1225,7 +1277,7 @@ export default function App() {
                           (e.target as HTMLInputElement).blur();
                         }
                       }}
-                      className={`w-12 px-2 py-1 text-center text-xs rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                      className={`w-12 px-2 py-1 text-center text-xs rounded-lg border focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
                     />
                     <span className={`text-[10px] font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
                       / {numPages}
@@ -1280,7 +1332,7 @@ export default function App() {
               disabled={pdfFiles.length === 0 || isAiLoading}
               className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Sparkles className="w-4 h-4 text-blue-400" />
+              <Sparkles className="w-4 h-4 text-accent" />
               Worth It?
             </button>
           </div>
@@ -1307,7 +1359,7 @@ export default function App() {
                     onClick={() => handleAction('Summarize/Explain')}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 text-xs font-medium transition-colors group"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+                    <Sparkles className="w-3.5 h-3.5 text-accent group-hover:scale-110 transition-transform" />
                     Summarize
                   </button>
                   <button 
@@ -1350,7 +1402,7 @@ export default function App() {
                   </button>
                   <button 
                     onClick={() => handleAction('Save to Knowledge Base')}
-                    className="p-2 rounded-xl hover:bg-white/5 text-white/40 hover:text-blue-400 transition-colors"
+                    className="p-2 rounded-xl hover:bg-white/5 text-white/40 hover:text-accent transition-colors"
                     title="Save to Knowledge Base"
                   >
                     <Brain className="w-4 h-4" />
@@ -1383,7 +1435,7 @@ export default function App() {
                       <div className="w-24 h-24 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-6 relative z-10">
                         <FileUp className="w-10 h-10 text-white/20" />
                       </div>
-                      <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full -z-0 opacity-50" />
+                      <div className="absolute inset-0 bg-accent/20 blur-3xl rounded-full -z-0 opacity-50" />
                     </div>
                     
                     <div className="space-y-2">
@@ -1408,12 +1460,12 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="w-full h-full border-2 border-dashed border-blue-500/50 rounded-3xl bg-blue-500/5 flex flex-col items-center justify-center space-y-4"
+                    className="w-full h-full border-2 border-dashed border-accent/50 rounded-3xl bg-accent/5 flex flex-col items-center justify-center space-y-4"
                   >
-                    <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/40">
+                    <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center shadow-lg shadow-accent/40">
                       <Plus className="w-8 h-8 text-white" />
                     </div>
-                    <p className="text-blue-400 font-medium text-lg">Drop to start reading</p>
+                    <p className="text-accent font-medium text-lg">Drop to start reading</p>
                   </motion.div>
                 )}
               </motion.div>
@@ -1457,7 +1509,7 @@ export default function App() {
       {!isRightCollapsed && (
         <div 
           onMouseDown={() => setIsResizingRight(true)}
-          className="w-1 hover:w-1.5 bg-transparent hover:bg-blue-500/30 cursor-col-resize transition-all z-20"
+          className="w-1 hover:w-1.5 bg-transparent hover:bg-accent/30 cursor-col-resize transition-all z-20"
         />
       )}
 
@@ -1465,7 +1517,7 @@ export default function App() {
       {isRightCollapsed && (
         <button 
           onClick={() => setIsRightCollapsed(false)}
-          className={`absolute right-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-blue-500 transition-all shadow-xl`}
+          className={`absolute right-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-accent transition-all shadow-xl`}
         >
           <PanelRightOpen className="w-5 h-5" />
         </button>
@@ -1478,7 +1530,7 @@ export default function App() {
       >
         <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
           <div className="flex items-center gap-3">
-            <MessageSquare className="w-5 h-5 text-blue-500" />
+            <MessageSquare className="w-5 h-5 text-accent" />
             <h2 className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Assistant</h2>
           </div>
           <div className="flex items-center gap-2">
@@ -1523,7 +1575,7 @@ export default function App() {
               <div 
                 className={`max-w-[90%] px-4 py-2.5 rounded-2xl text-sm ${
                   msg.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-tr-none' 
+                    ? 'bg-accent text-accent-foreground rounded-tr-none' 
                     : `${isDarkMode ? 'bg-white/5 text-white/80 border-white/10' : 'bg-gray-100 text-gray-800 border-gray-200'} border rounded-tl-none`
                 }`}
               >
@@ -1587,12 +1639,12 @@ export default function App() {
                 }
               }}
               placeholder="Ask a question..."
-              className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-blue-500/50 transition-colors resize-none h-24 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+              className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-accent/50 transition-colors resize-none h-24 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
             />
             <button 
               onClick={handleCustomQuestion}
               disabled={isAiLoading || !customQuestion.trim()}
-              className="absolute bottom-3 right-3 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50"
+              className="absolute bottom-3 right-3 p-1.5 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-colors shadow-lg shadow-accent/20 disabled:opacity-50"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -1648,7 +1700,7 @@ export default function App() {
                     value={bookmarkNote}
                     onChange={(e) => setBookmarkNote(e.target.value)}
                     placeholder="Add a thought or reminder..."
-                    className={`w-full px-4 py-3 text-sm rounded-xl border focus:outline-none focus:border-blue-500/50 transition-colors h-24 resize-none ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
+                    className={`w-full px-4 py-3 text-sm rounded-xl border focus:outline-none focus:border-accent/50 transition-colors h-24 resize-none ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
                   />
                 </div>
                 <div className="flex gap-3 pt-2">
@@ -1660,7 +1712,7 @@ export default function App() {
                   </button>
                   <button 
                     onClick={confirmSelectionBookmark}
-                    className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20"
+                    className="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-accent text-accent-foreground hover:opacity-90 transition-all shadow-lg shadow-accent/20"
                   >
                     {editingBookmarkId ? 'Update Bookmark' : 'Save Bookmark'}
                   </button>
@@ -1690,7 +1742,7 @@ export default function App() {
             >
               <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
                 <div className="flex items-center gap-3">
-                  <History className="w-5 h-5 text-blue-500" />
+                  <History className="w-5 h-5 text-accent" />
                   <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study History</h2>
                 </div>
                 <button 
@@ -1709,7 +1761,7 @@ export default function App() {
                   chatHistory.map((msg, i) => (
                     <div key={i} className={`p-4 rounded-xl border ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
                       <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-[10px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded ${msg.role === 'user' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
+                        <span className={`text-[10px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded ${msg.role === 'user' ? 'bg-accent/20 text-accent' : 'bg-purple-500/20 text-purple-400'}`}>
                           {msg.role}
                         </span>
                       </div>
@@ -1742,7 +1794,7 @@ export default function App() {
             >
               <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
                 <div className="flex items-center gap-3">
-                  <Settings className="w-5 h-5 text-blue-500" />
+                  <Settings className="w-5 h-5 text-accent" />
                   <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
                 </div>
                 <button 
@@ -1757,15 +1809,40 @@ export default function App() {
                   <h3 className={`text-sm font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-400'} uppercase tracking-wider`}>Appearance</h3>
                   <div className={`flex items-center justify-between p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'} border`}>
                     <div className="flex items-center gap-3">
-                      {isDarkMode ? <Moon className="w-4 h-4 text-blue-400" /> : <Sun className="w-4 h-4 text-orange-400" />}
+                      {isDarkMode ? <Moon className="w-4 h-4 text-accent" /> : <Sun className="w-4 h-4 text-orange-400" />}
                       <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Dark Mode</span>
                     </div>
                     <button 
                       onClick={() => setIsDarkMode(!isDarkMode)}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-accent' : 'bg-gray-300'}`}
                     >
                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDarkMode ? 'right-1' : 'left-1'}`} />
                     </button>
+                  </div>
+
+                  <div className={`space-y-3 p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'} border`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Sparkles className="w-4 h-4 text-accent" />
+                        <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Accent Color</span>
+                      </div>
+                      <input 
+                        type="color" 
+                        value={accentColor}
+                        onChange={(e) => setAccentColor(e.target.value)}
+                        className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      {['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#10b981', '#f59e0b'].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setAccentColor(color)}
+                          className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${accentColor === color ? 'border-white' : 'border-transparent'}`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -1776,7 +1853,7 @@ export default function App() {
                   >
                     <div className="flex items-center gap-3">
                       <Trash2 className="w-4 h-4" />
-                      <span className="text-sm">Clear Study History</span>
+                      <span className="text-sm">Clear All Study Data</span>
                     </div>
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -1807,9 +1884,9 @@ export default function App() {
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
                 <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
-              <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Clear Study History?</h3>
+              <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Clear All Study Data?</h3>
               <p className={`text-sm ${isDarkMode ? 'text-white/40' : 'text-gray-500'} mb-6`}>
-                This action cannot be undone. All your chat history and AI summaries will be permanently removed.
+                This action cannot be undone. All your chat history, bookmarks, and knowledge base tags will be permanently removed.
               </p>
               <div className="flex gap-3">
                 <button 
@@ -1821,8 +1898,10 @@ export default function App() {
                 <button 
                   onClick={() => {
                     setChatHistory([]);
+                    setBookmarks([]);
+                    setKnowledgeTags([]);
                     setShowClearConfirm(false);
-                    toast.success("History cleared successfully");
+                    toast.success("All study data cleared successfully");
                   }}
                   className="flex-1 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors font-medium"
                 >
@@ -1853,8 +1932,8 @@ export default function App() {
             >
               <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center">
-                    <MessageSquare className="w-6 h-6 text-blue-500" />
+                  <div className="w-12 h-12 rounded-2xl bg-accent/20 flex items-center justify-center">
+                    <MessageSquare className="w-6 h-6 text-accent" />
                   </div>
                   <div>
                     <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Discussion</h2>
@@ -1881,8 +1960,8 @@ export default function App() {
               <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
                 {chatHistory.length === 0 && !isAiLoading && (
                   <div className="h-full flex flex-col items-center justify-center text-center space-y-6 max-w-md mx-auto">
-                    <div className="w-20 h-20 rounded-3xl bg-blue-500/10 flex items-center justify-center">
-                      <Sparkles className="w-10 h-10 text-blue-500 animate-pulse" />
+                    <div className="w-20 h-20 rounded-3xl bg-accent/10 flex items-center justify-center">
+                      <Sparkles className="w-10 h-10 text-accent animate-pulse" />
                     </div>
                     <div className="space-y-2">
                       <h3 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Deep Study Session</h3>
@@ -1938,9 +2017,9 @@ export default function App() {
                   <div className="flex items-start">
                     <div className={`px-6 py-4 rounded-3xl rounded-tl-none flex items-center gap-3 ${isDarkMode ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
                       <div className="flex gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                       </div>
                       <span className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>AI is thinking...</span>
                     </div>
@@ -2000,7 +2079,7 @@ export default function App() {
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
                     selectedBookmarkForView.text 
-                      ? (isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600')
+                      ? (isDarkMode ? 'bg-accent/20 text-accent' : 'bg-accent/10 text-accent')
                       : (isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-600')
                   }`}>
                     {selectedBookmarkForView.text ? <StickyNote className="w-6 h-6" /> : <Bookmark className="w-6 h-6" />}
@@ -2031,8 +2110,8 @@ export default function App() {
                     </h4>
                     <div className={`relative p-6 rounded-2xl border-l-4 text-sm leading-relaxed ${
                       isDarkMode 
-                        ? 'bg-white/[0.03] border-blue-500/50 text-white/80' 
-                        : 'bg-blue-50/30 border-blue-200 text-gray-700'
+                        ? 'bg-white/[0.03] border-accent/50 text-white/80' 
+                        : 'bg-accent/5 border-accent/20 text-gray-700'
                     }`}>
                       <div className="absolute -top-3 -left-2 opacity-10">
                         <MessageSquare className="w-12 h-12" />
@@ -2051,7 +2130,7 @@ export default function App() {
                     </h4>
                     <button 
                       onClick={() => editBookmarkNote(selectedBookmarkForView)}
-                      className="text-[10px] font-bold text-blue-500 hover:underline"
+                      className="text-[10px] font-bold text-accent hover:underline"
                     >
                       Edit Note
                     </button>
@@ -2087,7 +2166,7 @@ export default function App() {
                   </button>
                   <button 
                     onClick={() => jumpToBookmark(selectedBookmarkForView)}
-                    className="px-6 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2"
+                    className="px-6 py-2 text-xs font-bold rounded-xl bg-accent text-accent-foreground hover:opacity-90 transition-all shadow-lg shadow-accent/20 flex items-center gap-2"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     Open Original File

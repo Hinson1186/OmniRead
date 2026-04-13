@@ -204,8 +204,8 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[2px]">
           <div className={`p-4 rounded-2xl flex flex-col items-center gap-3 shadow-2xl ${isDarkMode ? 'bg-[#141414] border border-white/10' : 'bg-white border border-gray-200'}`}>
             <div className="relative">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-              <Search className="w-4 h-4 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              <Loader2 className="w-8 h-8 text-accent animate-spin" />
+              <Search className="w-4 h-4 text-accent absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
             </div>
             <div className="text-center">
               <p className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -217,7 +217,7 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
             </div>
             <div className={`w-32 h-1 rounded-full overflow-hidden ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
               <div 
-                className="h-full bg-blue-500 transition-all duration-300" 
+                className="h-full bg-accent transition-all duration-300" 
                 style={{ width: `${ocrProgress}%` }}
               />
             </div>
@@ -230,7 +230,7 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
         onClick={() => onToggleBookmark(pageNumber)}
         className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-all transform hover:scale-110 ${
           isBookmarked 
-            ? 'bg-blue-500 text-white shadow-lg' 
+            ? 'bg-accent text-accent-foreground shadow-lg' 
             : 'bg-white/10 text-white/50 opacity-0 group-hover:opacity-100 backdrop-blur-md hover:bg-white/20'
         }`}
         title={isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
@@ -242,7 +242,7 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
       <div className={`absolute top-4 left-4 z-20 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border flex items-center gap-2 ${
         isDarkMode ? 'bg-black/40 border-white/10 text-white/40' : 'bg-white/40 border-black/10 text-black/40'
       }`}>
-        {isBookmarked && <Bookmark className="w-3 h-3 fill-current text-blue-400" />}
+        {isBookmarked && <Bookmark className="w-3 h-3 fill-current text-accent" />}
         Page {pageNumber}
       </div>
     </div>
@@ -343,7 +343,7 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale
     >
       {loading && (
         <div className={`fixed inset-0 flex items-center justify-center backdrop-blur-sm z-50 ${isDarkMode ? 'bg-[#0A0A0A]/50' : 'bg-white/50'}`}>
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent"></div>
         </div>
       )}
       
@@ -381,7 +381,8 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale
           pointer-events: auto;
         }
         ::selection {
-          background: rgba(59, 130, 246, 0.4);
+          background: var(--accent-color, rgba(59, 130, 246, 0.4));
+          opacity: 0.4;
         }
       `}</style>
     </div>
