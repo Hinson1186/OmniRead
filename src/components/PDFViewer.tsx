@@ -380,9 +380,11 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale
           transform-origin: 0% 0%;
           pointer-events: auto;
         }
+        .textLayer ::selection {
+          background: color-mix(in srgb, var(--accent-color, #3b82f6), transparent 70%);
+        }
         ::selection {
-          background: var(--accent-color, rgba(59, 130, 246, 0.4));
-          opacity: 0.4;
+          background: color-mix(in srgb, var(--accent-color, #3b82f6), transparent 70%);
         }
       `}</style>
     </div>
