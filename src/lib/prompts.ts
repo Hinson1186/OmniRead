@@ -32,7 +32,11 @@ export const STUDY_PROMPTS = {
    * Prompt for "Extract Concept" (used for Knowledge Base)
    */
   EXTRACT_CONCEPT: (text: string) => 
-    `Extract the single most important concept or topic from this text. Return ONLY a JSON object with two keys: 'category' (broad subject) and 'tag_name' (specific topic): \n\n"${text}"`,
+    `Analyze the following text to extract a meaningful academic or professional concept. 
+    If the text is nonsense, gibberish, irrelevant, or too short to be a concept, return a JSON object with 'category' set to 'Nonsense' and 'tag_name' set to 'None'.
+    Otherwise, return a JSON object with two keys: 'category' (broad subject) and 'tag_name' (specific topic).
+    
+    Text: "${text}"`,
 
   /**
    * Prompt for "Extract Topics" (used for Worth It? analysis)

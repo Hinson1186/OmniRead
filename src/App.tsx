@@ -65,31 +65,36 @@ interface BookmarkItem {
 }
 
 // --- Helper Functions ---
-const isDuplicateTag = (newName: string, existingTags: KnowledgeTag[]) => {
-  const normalize = (s: string) => s.toLowerCase().trim().replace(/[^\w\s]/g, '');
-  const n1 = normalize(newName);
+const normalizeString = (s: string) => s.toLowerCase().trim().replace(/[^\w\s]/g, '');
+
+const isSmartMatch = (s1: string, s2: string) => {
+  const n1 = normalizeString(s1);
+  const n2 = normalizeString(s2);
   
-  return existingTags.some(t => {
-    const n2 = normalize(t.tag_name);
-    if (n1 === n2) return true;
+  if (n1 === n2) return true;
+  if (n1.length > 3 && n2.length > 3 && (n1.includes(n2) || n2.includes(n1))) return true;
+  
+  const checkPlural = (a: string, b: string) => {
+    const sa = a.endsWith('s') ? a.slice(0, -1) : a;
+    const sb = b.endsWith('s') ? b.slice(0, -1) : b;
+    if (sa === sb && sa.length > 3) return true;
+
+    const esa = a.endsWith('es') ? a.slice(0, -2) : a;
+    const esb = b.endsWith('es') ? b.slice(0, -2) : b;
+    if (esa === esb && esa.length > 3) return true;
+
+    const iesa = a.endsWith('ies') ? a.slice(0, -3) + 'y' : a;
+    const iesb = b.endsWith('ies') ? b.slice(0, -3) + 'y' : b;
+    if (iesa === iesb && iesa.length > 3) return true;
     
-    // Check for singular/plural variations (e.g., "Integrals" vs "Integral")
-    const s1 = n1.endsWith('s') ? n1.slice(0, -1) : n1;
-    const s2 = n2.endsWith('s') ? n2.slice(0, -1) : n2;
-    if (s1 === s2 && s1.length > 3) return true;
-
-    // Handle 'es' (e.g., 'Boxes' vs 'Box')
-    const es1 = n1.endsWith('es') ? n1.slice(0, -2) : n1;
-    const es2 = n2.endsWith('es') ? n2.slice(0, -2) : n2;
-    if (es1 === es2 && es1.length > 3) return true;
-
-    // Handle 'ies' -> 'y' (e.g., 'Properties' vs 'Property')
-    const ies1 = n1.endsWith('ies') ? n1.slice(0, -3) + 'y' : n1;
-    const ies2 = n2.endsWith('ies') ? n2.slice(0, -3) + 'y' : n2;
-    if (ies1 === ies2 && ies1.length > 3) return true;
-
     return false;
-  });
+  };
+
+  return checkPlural(n1, n2);
+};
+
+const isDuplicateTag = (newName: string, existingTags: KnowledgeTag[]) => {
+  return existingTags.some(t => isSmartMatch(newName, t.tag_name));
 };
 
 export default function App() {
@@ -131,6 +136,7 @@ export default function App() {
   const [accentColor, setAccentColor] = useState(() => {
     return localStorage.getItem('omniread_accent_color') || '#3b82f6';
   });
+  const [currentPdfTopics, setCurrentPdfTopics] = useState<string[]>([]);
   const [leftTab, setLeftTab] = useState<'knowledge' | 'bookmarks'>('knowledge');
   
   // Bookmark Note Modal State
@@ -290,6 +296,10 @@ export default function App() {
   useEffect(() => {
     setPageInput(currentPage.toString());
   }, [currentPage]);
+
+  useEffect(() => {
+    setCurrentPdfTopics([]);
+  }, [activeFileIndex, pdfFiles.length]);
 
   // Dark Mode Effect
   useEffect(() => {
@@ -451,6 +461,11 @@ export default function App() {
 
       const finalTagName = concept.tag_name || tagNameInput;
       const finalCategory = concept.category || 'General';
+
+      if (finalCategory === 'Nonsense' || finalTagName === 'None') {
+        toast.error('This looks like nonsense. Topic not added.');
+        return;
+      }
 
       // Final Duplicate Check after AI refinement
       const isRefinedDuplicate = isDuplicateTag(finalTagName, knowledgeTags);
@@ -646,6 +661,10 @@ export default function App() {
 
             if (!concept || !concept.tag_name) throw new Error("Could not extract concept");
             
+            if (concept.category === 'Nonsense' || concept.tag_name === 'None') {
+              throw new Error("This looks like nonsense. Concept not saved.");
+            }
+            
             const tagName = concept.tag_name.trim();
             const isValidTopic = tagName.length >= 2 && /[a-zA-Z]/.test(tagName);
             
@@ -712,7 +731,7 @@ export default function App() {
     setPageInput(currentPage.toString());
   }, [currentPage]);
 
-  const handleWorthIt = async () => {
+   const handleWorthIt = async () => {
     if (!pdfViewerRef.current) return;
 
     setIsAiLoading(true);
@@ -721,15 +740,10 @@ export default function App() {
     try {
       const extractedText = await pdfViewerRef.current.extractText(5);
       const topics = await extractTopics(extractedText);
+      setCurrentPdfTopics(topics);
       
-      const supabase = getSupabase();
-      let userTags: string[] = knowledgeTags.map(t => t.tag_name.toLowerCase());
+      const userTags = knowledgeTags.map(t => t.tag_name);
       
-      if (supabase) {
-        const { data } = await supabase.from('knowledge_tags').select('tag_name');
-        if (data) userTags = data.map(t => t.tag_name.toLowerCase());
-      }
-
       if (userTags.length === 0) {
         setChatHistory(prev => [...prev, { role: 'model', text: "Your Knowledge Base is empty! I can't calculate overlap yet. Add some topics to your Knowledge Base first so I can tell you if this PDF is worth your time." }]);
         return;
@@ -740,20 +754,25 @@ export default function App() {
         setChatHistory(prev => [...prev, { role: 'model', text: "I couldn't identify any specific topics in this document to compare with your Knowledge Base. Try a different section!" }]);
         return;
       }
+
       const matchedTopics = topics.filter(topic => 
-        userTags.some(tag => topic.toLowerCase().includes(tag) || tag.includes(topic.toLowerCase()))
+        userTags.some(tag => isSmartMatch(topic, tag))
       );
+      
       const Y = matchedTopics.length;
       const overlapPercentage = Math.round((Y / X) * 100);
 
       let resultMsg = "";
       if (overlapPercentage >= 70) {
-        resultMsg = `🛑 **NOT WORTH IT:** You already know ${overlapPercentage}% of these topics (e.g., ${matchedTopics.slice(0, 3).join(', ')}). Skim or skip this PDF.`;
+        resultMsg = `🛑 **NOT WORTH IT:** You already know ${overlapPercentage}% of these topics (e.g., ${matchedTopics.slice(0, 3).join(', ')}). Skim or skip this PDF. I've highlighted the topics in your Knowledge tab!`;
+      } else if (overlapPercentage >= 30) {
+        resultMsg = `⚠️ **MODERATE OVERLAP:** About ${overlapPercentage}% overlap. You know some of this (like ${matchedTopics.slice(0, 2).join(', ')}), but there's plenty of new ground to cover. Worth a focused read.`;
       } else {
-        resultMsg = `✅ **WORTH IT:** Only ${overlapPercentage}% overlap with your Knowledge Base. This contains highly new information. Priority Reading!`;
+        resultMsg = `✅ **WORTH IT:** Only ${overlapPercentage}% overlap with your Knowledge Base. This contains highly new information. Priority Reading! Check the Knowledge tab to see the new topics.`;
       }
 
       setChatHistory(prev => [...prev, { role: 'model', text: resultMsg }]);
+      setLeftTab('knowledge');
     } catch (err) {
       console.error("Worth It error:", err);
       toast.error("Failed to calculate 'Worth It' status.");
@@ -879,6 +898,34 @@ export default function App() {
         <nav className="flex-1 overflow-y-auto px-4 space-y-6">
           {leftTab === 'knowledge' ? (
             <>
+              {currentPdfTopics.length > 0 && (
+                <div className={`mb-8 p-4 rounded-2xl border ${isDarkMode ? 'bg-white/[0.02] border-white/5' : 'bg-gray-50 border-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-3.5 h-3.5 text-accent" />
+                    <h3 className={`text-[11px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-white/60' : 'text-gray-600'}`}>
+                      Topics in this PDF
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {currentPdfTopics.map((topic, i) => {
+                      const isKnown = knowledgeTags.some(tag => isSmartMatch(topic, tag.tag_name));
+                      return (
+                        <div 
+                          key={i} 
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition-all ${
+                            isKnown 
+                              ? (isDarkMode ? 'bg-accent/20 border-accent/30 text-accent' : 'bg-accent/10 border-accent/20 text-accent')
+                              : (isDarkMode ? 'bg-white/5 border-white/10 text-white/40' : 'bg-gray-50 border-gray-200 text-gray-500')
+                          }`}
+                        >
+                          {topic}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {isKbLoading ? (
                 <div className="space-y-6 px-2">
                   {[1, 2, 3].map(i => (
@@ -1198,6 +1245,7 @@ export default function App() {
                         setActiveFileIndex(idx);
                         setCurrentPage(1);
                         setJumpToPage(undefined);
+                        setCurrentPdfTopics([]);
                       }
                     }}
                   >
