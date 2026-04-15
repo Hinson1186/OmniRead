@@ -42,6 +42,7 @@ import {
   Cloud,
   Leaf,
   Snowflake,
+  Square,
   AlertTriangle,
   Bookmark,
   Pencil
@@ -576,6 +577,16 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isAiFullScreen, setIsAiFullScreen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const stopAiGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsAiLoading(false);
+      toast.info("AI generation stopped.");
+    }
+  };
   const [customQuestion, setCustomQuestion] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   
@@ -675,9 +686,7 @@ export default function App() {
   const handleTextSelection = () => {
     const selection = window.getSelection();
     const text = selection ? selection.toString().trim() : '';
-    if (text) {
-      setSelectedText(text);
-    }
+    setSelectedText(text);
   };
 
   const clearSelection = () => {
@@ -687,8 +696,14 @@ export default function App() {
 
   const handleAction = async (action: string) => {
     if (!selectedText) return;
+    if (isAiLoading) {
+      toast.error("Please wait for the current AI response to finish.");
+      return;
+    }
 
     setIsAiLoading(true);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
     const userMsg: ChatMessage = { role: 'user', text: `${action}: "${selectedText}"` };
     setChatHistory(prev => [...prev, userMsg]);
 
@@ -716,8 +731,9 @@ export default function App() {
           const savePromise = (async () => {
             let concept;
             try {
-              concept = await extractConcept(selectedText);
+              concept = await extractConcept(selectedText, signal);
             } catch (e) {
+              if (e instanceof Error && e.name === 'AbortError') throw e;
               concept = { category: 'General', tag_name: selectedText.slice(0, 30) + (selectedText.length > 30 ? '...' : '') };
             }
 
@@ -771,6 +787,7 @@ export default function App() {
         } finally {
           setIsAiLoading(false);
           setSelectedText('');
+          abortControllerRef.current = null;
         }
         return;
       default:
@@ -779,13 +796,15 @@ export default function App() {
     }
 
     try {
-      const response = await generateAiResponse(prompt);
+      const response = await generateAiResponse(prompt, undefined, signal);
       setChatHistory(prev => [...prev, { role: 'model', text: response }]);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       toast.error("AI failed to respond.");
     } finally {
       setIsAiLoading(false);
       setSelectedText('');
+      abortControllerRef.current = null;
     }
   };
 
@@ -795,13 +814,20 @@ export default function App() {
 
    const handleWorthIt = async () => {
     if (!pdfViewerRef.current) return;
+    if (isAiLoading) {
+      toast.error("Please wait for the current AI response to finish.");
+      return;
+    }
 
     setIsAiLoading(true);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setChatHistory(prev => [...prev, { role: 'user', text: "Is this PDF Worth It?" }]);
 
     try {
       const extractedText = await pdfViewerRef.current.extractText(5);
-      const topics = await extractTopics(extractedText);
+      const topics = await extractTopics(extractedText, signal);
       setCurrentPdfTopics(topics);
       
       const userTags = knowledgeTags.map(t => t.tag_name);
@@ -836,28 +862,39 @@ export default function App() {
       setChatHistory(prev => [...prev, { role: 'model', text: resultMsg }]);
       setLeftTab('knowledge');
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       console.error("Worth It error:", err);
       toast.error("Failed to calculate 'Worth It' status.");
     } finally {
       setIsAiLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleCustomQuestion = async () => {
     if (!customQuestion.trim()) return;
+    if (isAiLoading) {
+      toast.error("Please wait for the current AI response to finish.");
+      return;
+    }
     
     const text = customQuestion;
     setCustomQuestion('');
     setIsAiLoading(true);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setChatHistory(prev => [...prev, { role: 'user', text }]);
 
     try {
-      const response = await generateAiResponse(text);
+      const response = await generateAiResponse(text, undefined, signal);
       setChatHistory(prev => [...prev, { role: 'model', text: response }]);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       toast.error("AI failed to respond.");
     } finally {
       setIsAiLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -902,7 +939,7 @@ export default function App() {
       {/* --- Left Panel: Knowledge Base Dashboard --- */}
       <aside 
         style={{ width: isLeftCollapsed ? 0 : leftWidth }}
-        className={`relative border-r border-[var(--border-main)] bg-[var(--bg-sidebar)] flex flex-col shrink-0 ${!isResizingLeft ? 'transition-[width] duration-300 ease-in-out' : ''} ${isLeftCollapsed ? 'overflow-hidden border-none' : ''}`}
+        className={`relative border-r border-[var(--border-main)] bg-gradient-to-b from-[var(--bg-sidebar)] to-[var(--bg-app)] flex flex-col shrink-0 ${!isResizingLeft ? 'transition-[width] duration-300 ease-in-out' : ''} ${isLeftCollapsed ? 'overflow-hidden border-none' : ''}`}
       >
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1463,7 +1500,7 @@ export default function App() {
                 initial={{ y: -100, opacity: 0, x: '-50%' }}
                 animate={{ y: 0, opacity: 1, x: '-50%' }}
                 exit={{ y: -100, opacity: 0, x: '-50%' }}
-                className="absolute top-4 left-1/2 z-50 flex items-center gap-1 p-1.5 bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl shadow-black/50"
+                className="action-bar absolute top-4 left-1/2 z-50 flex items-center gap-1 p-1.5 bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl shadow-black/50"
               >
                 <div className="flex items-center gap-1 border-r border-white/10 pr-1 mr-1">
                   <button 
@@ -1591,12 +1628,6 @@ export default function App() {
                 <div 
                   className={`flex-1 overflow-auto bg-[var(--bg-app)]`}
                   onMouseUp={handleTextSelection}
-                  onMouseDown={(e) => {
-                    // Only clear if we're not clicking on the action bar
-                    if (!(e.target as HTMLElement).closest('.action-bar')) {
-                      clearSelection();
-                    }
-                  }}
                 >
                   <PDFViewer 
                     ref={pdfViewerRef}
@@ -1637,7 +1668,7 @@ export default function App() {
       {/* --- Right Panel: Sidebar Chat --- */}
       <aside 
         style={{ width: isRightCollapsed ? 0 : rightWidth }}
-        className={`relative border-l border-[var(--border-main)] bg-[var(--bg-sidebar)] flex flex-col shrink-0 ${!isResizingRight ? 'transition-[width] duration-300 ease-in-out' : ''} ${isRightCollapsed ? 'overflow-hidden border-none' : ''}`}
+        className={`relative border-l border-[var(--border-main)] bg-gradient-to-b from-[var(--bg-sidebar)] to-[var(--bg-app)] flex flex-col shrink-0 ${!isResizingRight ? 'transition-[width] duration-300 ease-in-out' : ''} ${isRightCollapsed ? 'overflow-hidden border-none' : ''}`}
       >
         <header className={`p-6 border-b flex items-center justify-between border-[var(--border-main)]`}>
           <div className="flex items-center gap-3">
@@ -1752,13 +1783,25 @@ export default function App() {
               placeholder="Ask a question..."
               className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-accent/50 transition-colors resize-none h-24 bg-[var(--bg-input)] border-[var(--border-main)] text-[var(--text-main)]`}
             />
-            <button 
-              onClick={handleCustomQuestion}
-              disabled={isAiLoading || !customQuestion.trim()}
-              className="absolute bottom-3 right-3 p-1.5 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-colors shadow-lg shadow-accent/20 disabled:opacity-50"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="absolute bottom-3 right-3 flex items-center gap-2">
+              {isAiLoading && (
+                <button 
+                  onClick={stopAiGeneration}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                  title="Stop generation"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  <span className="text-[10px] font-bold">Stop</span>
+                </button>
+              )}
+              <button 
+                onClick={handleCustomQuestion}
+                disabled={isAiLoading || !customQuestion.trim()}
+                className="p-1.5 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-colors shadow-lg shadow-accent/20 disabled:opacity-50"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -2208,13 +2251,25 @@ export default function App() {
                       isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900 shadow-sm'
                     }`}
                   />
-                  <button 
-                    onClick={handleCustomQuestion}
-                    disabled={!customQuestion.trim() || isAiLoading}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20"
-                  >
-                    <Rocket className="w-5 h-5" />
-                  </button>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    {isAiLoading && (
+                      <button 
+                        onClick={stopAiGeneration}
+                        className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                        title="Stop generation"
+                      >
+                        <Square className="w-4 h-4 fill-current" />
+                        <span className="text-sm font-bold">Stop Output</span>
+                      </button>
+                    )}
+                    <button 
+                      onClick={handleCustomQuestion}
+                      disabled={!customQuestion.trim() || isAiLoading}
+                      className="p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20"
+                    >
+                      <Rocket className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
