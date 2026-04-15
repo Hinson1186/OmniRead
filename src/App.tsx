@@ -49,7 +49,7 @@ import {
   Bookmark,
   Pencil
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -72,6 +72,7 @@ interface QuizQuestion {
   correct: string;
   explanation: string;
   selectedAnswer?: string;
+  tagId?: string;
 }
 
 interface BookmarkItem {
@@ -588,6 +589,7 @@ export default function App() {
   const [isAiFullScreen, setIsAiFullScreen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<QuizQuestion | null>(null);
+  const quizDragControls = useDragControls();
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const stopAiGeneration = () => {
@@ -815,6 +817,7 @@ export default function App() {
       if (action === 'Check Understanding') {
         // Parse the MC question
         const lines = response.split('\n').map(l => l.trim()).filter(l => l);
+        const topic = lines.find(l => l.startsWith('TOPIC:'))?.replace('TOPIC:', '').trim() || '';
         const questionText = lines.find(l => l.startsWith('QUESTION:'))?.replace('QUESTION:', '').trim() || '';
         const optionA = lines.find(l => l.startsWith('A)'))?.replace('A)', '').trim() || '';
         const optionB = lines.find(l => l.startsWith('B)'))?.replace('B)', '').trim() || '';
@@ -824,13 +827,17 @@ export default function App() {
         const explanation = lines.find(l => l.startsWith('EXPLANATION:'))?.replace('EXPLANATION:', '').trim() || '';
 
         if (questionText && optionA && optionB && correct) {
+          // Find matching tag for mastery
+          const matchingTag = knowledgeTags.find(t => isSmartMatch(topic, t.tag_name));
+          
           setActiveQuiz({
             question: questionText,
             options: [optionA, optionB, optionC, optionD].filter(o => o),
             correct,
-            explanation
+            explanation,
+            tagId: matchingTag?.id
           });
-          setChatHistory(prev => [...prev, { role: 'model', text: "I've generated a question to check your understanding! Check the quiz box above." }]);
+          setChatHistory(prev => [...prev, { role: 'model', text: `I've generated a question about **${topic || 'this topic'}** to check your understanding! Check the quiz box above.` }]);
         } else {
           setChatHistory(prev => [...prev, { role: 'model', text: response }]);
         }
@@ -847,9 +854,62 @@ export default function App() {
     }
   };
 
+  const handleSelectAll = async () => {
+    if (!pdfViewerRef.current || pdfFiles.length === 0) return;
+    
+    const loadingToast = toast.loading("Extracting full document text...");
+    try {
+      // Extract all pages
+      const fullText = await pdfViewerRef.current.extractText(numPages);
+      if (fullText.trim()) {
+        setSelectedText(fullText);
+        toast.success("Full document selected!", { id: loadingToast });
+      } else {
+        toast.error("Could not extract text from this document.", { id: loadingToast });
+      }
+    } catch (error) {
+      console.error("Select all failed:", error);
+      toast.error("Failed to select all text.", { id: loadingToast });
+    }
+  };
+
   const handleQuizAnswer = (answer: string) => {
     if (!activeQuiz || activeQuiz.selectedAnswer) return;
+    
+    const isCorrect = answer === activeQuiz.correct;
     setActiveQuiz(prev => prev ? { ...prev, selectedAnswer: answer } : null);
+
+    if (isCorrect && activeQuiz.tagId) {
+      const updateMastery = async () => {
+        const supabase = getSupabase();
+        if (supabase) {
+          const tag = knowledgeTags.find(t => t.id === activeQuiz.tagId);
+          if (tag) {
+            const newScore = Math.min(100, (tag.mastery_score || 0) + 10);
+            const { error } = await supabase
+              .from('knowledge_tags')
+              .update({ mastery_score: newScore })
+              .eq('id', activeQuiz.tagId);
+            if (!error) await fetchKnowledgeTags();
+          }
+        } else {
+          setKnowledgeTags(prev => prev.map(t => 
+            t.id === activeQuiz.tagId 
+              ? { ...t, mastery_score: Math.min(100, (t.mastery_score || 0) + 10) }
+              : t
+          ));
+        }
+      };
+      updateMastery();
+      toast.success("Mastery increased! +10%", {
+        icon: '🎯',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          border: 'none'
+        }
+      });
+    }
   };
 
   useEffect(() => {
@@ -1488,26 +1548,6 @@ export default function App() {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
-
-                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 py-1 mr-2">
-                  <button 
-                    onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
-                    className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
-                    title="Zoom Out"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <span className="text-[10px] font-mono w-10 text-center text-white/40">
-                    {Math.round(scale * 100)}%
-                  </span>
-                  <button 
-                    onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
-                    className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
-                    title="Zoom In"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                </div>
               </>
             )}
             
@@ -1519,6 +1559,16 @@ export default function App() {
               {isLeftCollapsed && isRightCollapsed ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
             </button>
             
+            <button 
+              onClick={handleSelectAll}
+              disabled={pdfFiles.length === 0}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Select entire document text"
+            >
+              <Type className="w-4 h-4 text-blue-400" />
+              Select All
+            </button>
+
             <button 
               onClick={handleWorthIt}
               disabled={pdfFiles.length === 0 || isAiLoading}
@@ -1681,21 +1731,34 @@ export default function App() {
                   {activeQuiz && (
                     <motion.div 
                       drag
+                      dragControls={quizDragControls}
+                      dragListener={false}
                       dragMomentum={false}
                       initial={{ opacity: 0, scale: 0.9, y: 20 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] w-full max-w-lg p-6 bg-[#1A1A1A]/95 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl cursor-default"
+                      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 bg-[#1A1A1A]/95 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl cursor-default scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
                     >
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
-                          <div className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/5 rounded-lg text-white/20 transition-colors">
+                          <div 
+                            onPointerDown={(e) => quizDragControls.start(e)}
+                            className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/5 rounded-lg text-white/20 transition-colors"
+                          >
                             <GripVertical className="w-4 h-4" />
                           </div>
                           <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
                             <HelpCircle className="w-4 h-4 text-blue-400" />
                           </div>
                           <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Knowledge Check</span>
+                          {activeQuiz.tagId && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20">
+                              <Zap className="w-3 h-3 text-accent" />
+                              <span className="text-[10px] font-bold text-accent">
+                                Mastery: {knowledgeTags.find(t => t.id === activeQuiz.tagId)?.mastery_score || 0}%
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <button 
                           onClick={() => setActiveQuiz(null)}
@@ -1787,6 +1850,7 @@ export default function App() {
                     isDarkMode={isDarkMode}
                     onDocumentLoad={(pages) => setNumPages(pages)} 
                     onPageChange={(page) => setCurrentPage(page)}
+                    onScaleChange={setScale}
                     jumpToPage={jumpToPage}
                     bookmarks={bookmarks.filter(b => b.fileName === pdfFiles[activeFileIndex]?.name && !b.text).map(b => b.pageNumber)}
                     onToggleBookmark={toggleBookmark}

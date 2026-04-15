@@ -53,6 +53,7 @@ export const STUDY_PROMPTS = {
     If the content involves mathematics, science, or technical formulas, use LaTeX for all formulas (e.g., use $E=mc^2$ or $$\\frac{a}{b}$$).
     
     Format your response EXACTLY like this:
+    TOPIC: [The main concept or subject being tested, e.g., "Photosynthesis"]
     QUESTION: [The question text]
     A) [Option A]
     B) [Option B]
