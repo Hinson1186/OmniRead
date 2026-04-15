@@ -45,6 +45,24 @@ export const STUDY_PROMPTS = {
     `List the core topics covered in this document. Return ONLY a comma-separated list of topic names: \n\n"${text}"`,
 
   /**
+   * Prompt for "Check Understanding" action
+   */
+  CHECK_UNDERSTANDING: (text: string) => 
+    `Generate one multiple-choice question to check the user's understanding of the following text. 
+    The question should be challenging but fair.
+    
+    Format your response EXACTLY like this:
+    QUESTION: [The question text]
+    A) [Option A]
+    B) [Option B]
+    C) [Option C]
+    D) [Option D]
+    CORRECT: [A, B, C, or D]
+    EXPLANATION: [A brief explanation of why that answer is correct and why others are wrong]
+    
+    Text: "${text}"`,
+
+  /**
    * System instruction for the AI Assistant
    */
   SYSTEM_INSTRUCTION: "You are a helpful, encouraging, and highly intelligent study assistant. Your goal is to help the user understand complex topics by providing clear, concise, and accurate information. Use Markdown for formatting to make your responses easy to read."

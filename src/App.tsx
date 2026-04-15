@@ -24,6 +24,7 @@ import {
   Type,
   Quote,
   X,
+  HelpCircle,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -62,6 +63,14 @@ import { STUDY_PROMPTS } from './lib/prompts';
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
+}
+
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  correct: string;
+  explanation: string;
+  selectedAnswer?: string;
 }
 
 interface BookmarkItem {
@@ -577,6 +586,7 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isAiFullScreen, setIsAiFullScreen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [activeQuiz, setActiveQuiz] = useState<QuizQuestion | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const stopAiGeneration = () => {
@@ -722,6 +732,9 @@ export default function App() {
       case 'Explain Code':
         prompt = STUDY_PROMPTS.EXPLAIN_CODE(selectedText);
         break;
+      case 'Check Understanding':
+        prompt = STUDY_PROMPTS.CHECK_UNDERSTANDING(selectedText);
+        break;
       case 'Bookmark Selection':
         addSelectionBookmark();
         return;
@@ -797,7 +810,32 @@ export default function App() {
 
     try {
       const response = await generateAiResponse(prompt, undefined, signal);
-      setChatHistory(prev => [...prev, { role: 'model', text: response }]);
+      
+      if (action === 'Check Understanding') {
+        // Parse the MC question
+        const lines = response.split('\n').map(l => l.trim()).filter(l => l);
+        const questionText = lines.find(l => l.startsWith('QUESTION:'))?.replace('QUESTION:', '').trim() || '';
+        const optionA = lines.find(l => l.startsWith('A)'))?.replace('A)', '').trim() || '';
+        const optionB = lines.find(l => l.startsWith('B)'))?.replace('B)', '').trim() || '';
+        const optionC = lines.find(l => l.startsWith('C)'))?.replace('C)', '').trim() || '';
+        const optionD = lines.find(l => l.startsWith('D)'))?.replace('D)', '').trim() || '';
+        const correct = lines.find(l => l.startsWith('CORRECT:'))?.replace('CORRECT:', '').trim() || '';
+        const explanation = lines.find(l => l.startsWith('EXPLANATION:'))?.replace('EXPLANATION:', '').trim() || '';
+
+        if (questionText && optionA && optionB && correct) {
+          setActiveQuiz({
+            question: questionText,
+            options: [optionA, optionB, optionC, optionD].filter(o => o),
+            correct,
+            explanation
+          });
+          setChatHistory(prev => [...prev, { role: 'model', text: "I've generated a question to check your understanding! Check the quiz box above." }]);
+        } else {
+          setChatHistory(prev => [...prev, { role: 'model', text: response }]);
+        }
+      } else {
+        setChatHistory(prev => [...prev, { role: 'model', text: response }]);
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       toast.error("AI failed to respond.");
@@ -806,6 +844,11 @@ export default function App() {
       setSelectedText('');
       abortControllerRef.current = null;
     }
+  };
+
+  const handleQuizAnswer = (answer: string) => {
+    if (!activeQuiz || activeQuiz.selectedAnswer) return;
+    setActiveQuiz(prev => prev ? { ...prev, selectedAnswer: answer } : null);
   };
 
   useEffect(() => {
@@ -1538,6 +1581,13 @@ export default function App() {
                     <Bookmark className="w-3.5 h-3.5 text-yellow-400 group-hover:scale-110 transition-transform" />
                     Bookmark
                   </button>
+                  <button 
+                    onClick={() => handleAction('Check Understanding')}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 text-xs font-medium transition-colors group"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+                    Quiz
+                  </button>
                 </div>
                 
                 <div className="flex items-center gap-1">
@@ -1626,9 +1676,96 @@ export default function App() {
                 className="h-full flex flex-col"
               >
                 <div 
-                  className={`flex-1 overflow-auto bg-[var(--bg-app)]`}
+                  className={`flex-1 overflow-auto bg-[var(--bg-app)] relative`}
                   onMouseUp={handleTextSelection}
                 >
+                  {/* --- Quiz Overlay --- */}
+                  <AnimatePresence>
+                    {activeQuiz && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[60] w-full max-w-lg p-6 bg-[#1A1A1A]/95 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                              <HelpCircle className="w-4 h-4 text-blue-400" />
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Knowledge Check</span>
+                          </div>
+                          <button 
+                            onClick={() => setActiveQuiz(null)}
+                            className="p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <h4 className="text-sm font-semibold text-white mb-4 leading-relaxed">
+                          {activeQuiz.question}
+                        </h4>
+
+                        <div className="space-y-2 mb-4">
+                          {activeQuiz.options.map((option, idx) => {
+                            const letter = String.fromCharCode(65 + idx);
+                            const isSelected = activeQuiz.selectedAnswer === letter;
+                            const isCorrect = activeQuiz.correct === letter;
+                            const showResult = !!activeQuiz.selectedAnswer;
+
+                            let bgColor = "bg-white/5 hover:bg-white/10 border-white/5";
+                            if (showResult) {
+                              if (isCorrect) bgColor = "bg-green-500/20 border-green-500/30 text-green-400";
+                              else if (isSelected) bgColor = "bg-red-500/20 border-red-500/30 text-red-400";
+                              else bgColor = "bg-white/5 border-white/5 opacity-50";
+                            }
+
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => handleQuizAnswer(letter)}
+                                disabled={showResult}
+                                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-sm transition-all ${bgColor}`}
+                              >
+                                <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold ${
+                                  isSelected ? 'bg-current text-black' : 'bg-white/10 text-white/60'
+                                }`}>
+                                  {letter}
+                                </span>
+                                {option}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {activeQuiz.selectedAnswer && (
+                          <motion.div 
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            className="p-4 rounded-2xl bg-white/5 border border-white/5"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              {activeQuiz.selectedAnswer === activeQuiz.correct ? (
+                                <Zap className="w-4 h-4 text-green-400" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-red-400" />
+                              )}
+                              <span className={`text-xs font-bold uppercase ${
+                                activeQuiz.selectedAnswer === activeQuiz.correct ? 'text-green-400' : 'text-red-400'
+                              }`}>
+                                {activeQuiz.selectedAnswer === activeQuiz.correct ? 'Correct!' : 'Not quite'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-white/60 leading-relaxed">
+                              {activeQuiz.explanation}
+                            </p>
+                          </motion.div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <PDFViewer 
                     ref={pdfViewerRef}
                     file={pdfFiles[activeFileIndex]} 
