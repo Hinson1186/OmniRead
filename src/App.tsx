@@ -21,6 +21,8 @@ import {
   Sparkles, 
   Tag,
   Upload,
+  Type,
+  Quote,
   X,
   ZoomIn,
   ZoomOut,
@@ -36,6 +38,10 @@ import {
   Trash2,
   Moon,
   Sun,
+  Zap,
+  Cloud,
+  Leaf,
+  Snowflake,
   AlertTriangle,
   Bookmark,
   Pencil
@@ -68,6 +74,15 @@ interface BookmarkItem {
 
 // --- Helper Functions ---
 const normalizeString = (s: string) => s.toLowerCase().trim().replace(/[^\w\s]/g, '');
+
+const getContrastColor = (hex: string) => {
+  if (!hex || !hex.startsWith('#')) return '#ffffff';
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? '#111827' : '#ffffff';
+};
 
 const isSmartMatch = (s1: string, s2: string) => {
   const n1 = normalizeString(s1);
@@ -134,10 +149,14 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>(() => {
+  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia' | 'midnight' | 'ocean' | 'forest' | 'nord' | 'custom'>(() => {
     return (localStorage.getItem('omniread_theme') as any) || 'dark';
   });
-  const isDarkMode = theme === 'dark';
+  const [customBgColor, setCustomBgColor] = useState(() => {
+    return localStorage.getItem('omniread_custom_bg') || '#ffffff';
+  });
+
+  const isDarkMode = theme === 'dark' || theme === 'midnight' || theme === 'ocean' || theme === 'forest' || theme === 'nord' || (theme === 'custom' && getContrastColor(customBgColor) === '#ffffff');
   const isSepiaMode = theme === 'sepia';
   const isLightMode = theme === 'light';
 
@@ -312,11 +331,46 @@ export default function App() {
   // Theme Effect
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove('dark', 'sepia');
-    if (theme === 'dark') root.classList.add('dark');
-    if (theme === 'sepia') root.classList.add('sepia');
+    root.classList.remove('dark', 'sepia', 'midnight', 'ocean', 'forest', 'nord');
+    
+    // Reset custom styles
+    root.style.removeProperty('--bg-app');
+    root.style.removeProperty('--bg-sidebar');
+    root.style.removeProperty('--bg-card');
+    root.style.removeProperty('--bg-input');
+    root.style.removeProperty('--text-main');
+    root.style.removeProperty('--text-muted');
+    root.style.removeProperty('--border-main');
+    root.style.removeProperty('--border-muted');
+
+    if (theme !== 'custom') {
+      root.classList.add(theme);
+    } else {
+      const text = getContrastColor(customBgColor);
+      const isDark = text === '#ffffff';
+      
+      root.style.setProperty('--bg-app', customBgColor);
+      root.style.setProperty('--bg-sidebar', customBgColor);
+      root.style.setProperty('--text-main', text);
+      
+      if (isDark) {
+        root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.05)');
+        root.style.setProperty('--bg-input', 'rgba(255, 255, 255, 0.03)');
+        root.style.setProperty('--text-muted', 'rgba(255, 255, 255, 0.5)');
+        root.style.setProperty('--border-main', 'rgba(255, 255, 255, 0.1)');
+        root.style.setProperty('--border-muted', 'rgba(255, 255, 255, 0.05)');
+        root.classList.add('dark'); // For tailwind dark: classes
+      } else {
+        root.style.setProperty('--bg-card', 'rgba(0, 0, 0, 0.02)');
+        root.style.setProperty('--bg-input', 'rgba(0, 0, 0, 0.03)');
+        root.style.setProperty('--text-muted', 'rgba(0, 0, 0, 0.5)');
+        root.style.setProperty('--border-main', 'rgba(0, 0, 0, 0.1)');
+        root.style.setProperty('--border-muted', 'rgba(0, 0, 0, 0.05)');
+      }
+      localStorage.setItem('omniread_custom_bg', customBgColor);
+    }
     localStorage.setItem('omniread_theme', theme);
-  }, [theme]);
+  }, [theme, customBgColor]);
 
   // Fetch Knowledge Tags
   const fetchKnowledgeTags = async () => {
@@ -1071,10 +1125,10 @@ export default function App() {
                                   ? (isDarkMode ? 'bg-accent/20 text-accent' : 'bg-accent/10 text-accent')
                                   : (isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-600')
                               }`}>
-                                {bookmark.text ? <StickyNote className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+                                {bookmark.text ? <Type className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
                               </div>
                               <span className={`text-[10px] font-bold tracking-widest uppercase ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
-                                Page {bookmark.pageNumber}
+                                {bookmark.text ? 'Selection' : 'Page'} • {bookmark.pageNumber}
                               </span>
                             </div>
                             <h4 className={`text-[11px] font-bold truncate max-w-[160px] ${isDarkMode ? 'text-white/60' : 'text-gray-600'}`}>
@@ -1105,13 +1159,14 @@ export default function App() {
                         </div>
                         
                         {bookmark.text && (
-                          <div className={`relative mb-3 p-2.5 rounded-lg border-l-2 text-[11px] leading-relaxed italic ${
+                          <div className={`relative mb-3 p-3 rounded-xl border text-[11px] leading-relaxed ${
                             isDarkMode 
-                              ? 'bg-white/[0.02] border-accent/30 text-white/50' 
-                              : 'bg-accent/5 border-accent/20 text-gray-600'
+                              ? 'bg-white/[0.02] border-white/5 text-white/50' 
+                              : 'bg-gray-50 border-gray-100 text-gray-600'
                           }`}>
-                            <span className="line-clamp-3">
-                              "{bookmark.text}"
+                            <Quote className={`absolute -top-2 -left-1 w-4 h-4 ${isDarkMode ? 'text-accent/40' : 'text-accent/20'}`} />
+                            <span className="line-clamp-3 relative z-10">
+                              {bookmark.text}
                             </span>
                           </div>
                         )}
@@ -1708,7 +1763,7 @@ export default function App() {
         </div>
       </aside>
 
-      <Toaster position="top-center" theme="dark" />
+      <Toaster position="top-center" theme={isDarkMode ? 'dark' : 'light'} />
 
       {/* --- Bookmark Note Modal --- */}
       <AnimatePresence>
@@ -1870,30 +1925,63 @@ export default function App() {
                       <Palette className="w-4 h-4 text-accent" />
                       <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : isSepiaMode ? 'text-[#433422]' : 'text-gray-900'}`}>Theme</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       {[
                         { id: 'light', label: 'Light', icon: Sun, color: 'bg-white border-gray-200 text-gray-900' },
                         { id: 'dark', label: 'Dark', icon: Moon, color: 'bg-[#0A0A0A] border-white/10 text-white' },
-                        { id: 'sepia', label: 'Sepia', icon: Eye, color: 'bg-[#f4ecd8] border-[#433422]/20 text-[#433422]' }
+                        { id: 'sepia', label: 'Sepia', icon: Eye, color: 'bg-[#f4ecd8] border-[#433422]/20 text-[#433422]' },
+                        { id: 'midnight', label: 'Midnight', icon: Zap, color: 'bg-black border-white/5 text-white' },
+                        { id: 'ocean', label: 'Ocean', icon: Cloud, color: 'bg-[#0f172a] border-white/10 text-white' },
+                        { id: 'forest', label: 'Forest', icon: Leaf, color: 'bg-[#064e3b] border-white/10 text-white' },
+                        { id: 'nord', label: 'Nord', icon: Snowflake, color: 'bg-[#2e3440] border-white/10 text-white' },
+                        { id: 'custom', label: 'Custom', icon: Palette, color: 'bg-gradient-to-br from-pink-500 to-orange-500 border-white/10 text-white' }
                       ].map((t) => (
                         <button
                           key={t.id}
                           onClick={() => setTheme(t.id as any)}
-                          className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                          className={`flex flex-col items-center gap-2 p-2 rounded-xl border-2 transition-all ${
                             theme === t.id 
                               ? 'border-accent bg-accent/5' 
                               : `border-transparent ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-black/5'}`
                           }`}
                         >
-                          <div className={`w-full aspect-video rounded-lg border ${t.color} flex items-center justify-center`}>
+                          <div className={`w-full aspect-square rounded-lg border ${t.color} flex items-center justify-center`}>
                             <t.icon className="w-4 h-4" />
                           </div>
-                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-white/60' : isSepiaMode ? 'text-[#433422]/60' : 'text-gray-500'}`}>
+                          <span className={`text-[8px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-white/60' : isSepiaMode ? 'text-[#433422]/60' : 'text-gray-500'} truncate w-full`}>
                             {t.label}
                           </span>
                         </button>
                       ))}
                     </div>
+
+                    {theme === 'custom' && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="pt-2 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`text-xs font-medium ${isDarkMode ? 'text-white/60' : 'text-gray-500'}`}>Background Color</span>
+                          <input 
+                            type="color" 
+                            value={customBgColor}
+                            onChange={(e) => setCustomBgColor(e.target.value)}
+                            className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-none"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          {['#ffffff', '#f3f4f6', '#1a1a1a', '#000000', '#2d3436', '#2c3e50', '#1e272e', '#4834d4'].map(color => (
+                            <button
+                              key={color}
+                              onClick={() => setCustomBgColor(color)}
+                              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${customBgColor === color ? 'border-accent' : 'border-transparent'}`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
 
                   <div className={`space-y-3 p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : isSepiaMode ? 'bg-[#e8dfc4] border-[#433422]/10' : 'bg-gray-50 border-gray-200'} border`}>
