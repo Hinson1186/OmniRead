@@ -25,6 +25,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Palette,
+  Eye,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -132,7 +134,13 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>(() => {
+    return (localStorage.getItem('omniread_theme') as any) || 'dark';
+  });
+  const isDarkMode = theme === 'dark';
+  const isSepiaMode = theme === 'sepia';
+  const isLightMode = theme === 'light';
+
   const [accentColor, setAccentColor] = useState(() => {
     return localStorage.getItem('omniread_accent_color') || '#3b82f6';
   });
@@ -301,14 +309,14 @@ export default function App() {
     setCurrentPdfTopics([]);
   }, [activeFileIndex, pdfFiles.length]);
 
-  // Dark Mode Effect
+  // Theme Effect
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    const root = document.documentElement;
+    root.classList.remove('dark', 'sepia');
+    if (theme === 'dark') root.classList.add('dark');
+    if (theme === 'sepia') root.classList.add('sepia');
+    localStorage.setItem('omniread_theme', theme);
+  }, [theme]);
 
   // Fetch Knowledge Tags
   const fetchKnowledgeTags = async () => {
@@ -835,19 +843,19 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen w-full ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-accent/30 overflow-hidden transition-colors duration-300`}>
+    <div className={`flex h-screen w-full bg-[var(--bg-app)] text-[var(--text-main)] font-sans selection:bg-accent/30 overflow-hidden transition-colors duration-300`}>
       
       {/* --- Left Panel: Knowledge Base Dashboard --- */}
       <aside 
         style={{ width: isLeftCollapsed ? 0 : leftWidth }}
-        className={`relative border-r ${isDarkMode ? 'border-white/5 bg-[#0F0F0F]' : 'border-gray-200 bg-white'} flex flex-col shrink-0 ${!isResizingLeft ? 'transition-[width] duration-300 ease-in-out' : ''} ${isLeftCollapsed ? 'overflow-hidden border-none' : ''}`}
+        className={`relative border-r border-[var(--border-main)] bg-[var(--bg-sidebar)] flex flex-col shrink-0 ${!isResizingLeft ? 'transition-[width] duration-300 ease-in-out' : ''} ${isLeftCollapsed ? 'overflow-hidden border-none' : ''}`}
       >
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center shadow-lg shadow-accent/20">
               <Brain className="w-5 h-5 text-white" />
             </div>
-            <h1 className={`font-semibold text-lg tracking-tight whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>OmniRead AI</h1>
+            <h1 className={`font-semibold text-lg tracking-tight whitespace-nowrap text-[var(--text-main)]`}>OmniRead AI</h1>
           </div>
           <button 
             onClick={() => setIsLeftCollapsed(true)}
@@ -858,13 +866,13 @@ export default function App() {
         </div>
 
         <div className="px-4 mb-4">
-          <div className={`flex p-1 rounded-xl ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+          <div className={`flex p-1 rounded-xl bg-[var(--bg-input)]`}>
             <button 
               onClick={() => setLeftTab('knowledge')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-lg transition-all ${
                 leftTab === 'knowledge' 
-                  ? `${isDarkMode ? 'bg-white/10 text-white shadow-lg shadow-black/20' : 'bg-white text-gray-900 shadow-sm'}` 
-                  : `${isDarkMode ? 'text-white/40 hover:text-white/60' : 'text-gray-500 hover:text-gray-700'}`
+                  ? `bg-[var(--bg-card)] text-[var(--text-main)] shadow-sm` 
+                  : `text-[var(--text-muted)] hover:text-[var(--text-main)]`
               }`}
             >
               <Brain className="w-3.5 h-3.5" />
@@ -886,11 +894,11 @@ export default function App() {
 
         <div className="px-4 mb-6">
           <div className="relative">
-            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-white/30' : 'text-gray-400'}`} />
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]`} />
             <input 
               type="text" 
               placeholder="Search knowledge..." 
-              className={`w-full border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-accent/50 transition-colors ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+              className={`w-full border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-accent/50 transition-colors bg-[var(--bg-input)] border-[var(--border-main)] text-[var(--text-main)]`}
             />
           </div>
         </div>
@@ -1215,18 +1223,18 @@ export default function App() {
       {isLeftCollapsed && (
         <button 
           onClick={() => setIsLeftCollapsed(false)}
-          className={`absolute left-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-accent transition-all shadow-xl`}
+          className={`absolute left-4 top-4 z-30 p-2 bg-[var(--bg-card)] border-[var(--border-main)] text-[var(--text-muted)] border rounded-lg hover:text-accent transition-all shadow-xl`}
         >
           <PanelLeftOpen className="w-5 h-5" />
         </button>
       )}
 
       {/* --- Center Panel: PDF Dropzone / Viewer --- */}
-      <main className={`flex-1 flex flex-col relative overflow-hidden ${isDarkMode ? 'bg-[#0A0A0A]' : 'bg-gray-50'}`}>
-        <header className={`h-16 border-b ${isDarkMode ? 'border-white/5 bg-[#0A0A0A]/80' : 'border-gray-200 bg-white/80'} flex items-center justify-between px-6 backdrop-blur-md z-10 shrink-0`}>
+      <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--bg-app)]`}>
+        <header className={`h-16 border-b border-[var(--border-main)] bg-[var(--bg-app)]/80 flex items-center justify-between px-6 backdrop-blur-md z-10 shrink-0`}>
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {pdfFiles.length === 0 ? (
-              <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-white/40' : 'text-gray-400'}`}>
+              <div className={`flex items-center gap-2 text-sm text-[var(--text-muted)]`}>
                 <BookOpen className="w-4 h-4" />
                 <span>No document loaded</span>
               </div>
@@ -1526,7 +1534,7 @@ export default function App() {
                 className="h-full flex flex-col"
               >
                 <div 
-                  className={`flex-1 overflow-auto ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'}`}
+                  className={`flex-1 overflow-auto bg-[var(--bg-app)]`}
                   onMouseUp={handleTextSelection}
                   onMouseDown={(e) => {
                     // Only clear if we're not clicking on the action bar
@@ -1565,7 +1573,7 @@ export default function App() {
       {isRightCollapsed && (
         <button 
           onClick={() => setIsRightCollapsed(false)}
-          className={`absolute right-4 top-4 z-30 p-2 ${isDarkMode ? 'bg-[#1A1A1A] border-white/10 text-white/40' : 'bg-white border-gray-200 text-gray-400'} border rounded-lg hover:text-accent transition-all shadow-xl`}
+          className={`absolute right-4 top-4 z-30 p-2 bg-[var(--bg-card)] border-[var(--border-main)] text-[var(--text-muted)] border rounded-lg hover:text-accent transition-all shadow-xl`}
         >
           <PanelRightOpen className="w-5 h-5" />
         </button>
@@ -1574,12 +1582,12 @@ export default function App() {
       {/* --- Right Panel: Sidebar Chat --- */}
       <aside 
         style={{ width: isRightCollapsed ? 0 : rightWidth }}
-        className={`relative border-l ${isDarkMode ? 'border-white/5 bg-[#0F0F0F]' : 'border-gray-200 bg-white'} flex flex-col shrink-0 ${!isResizingRight ? 'transition-[width] duration-300 ease-in-out' : ''} ${isRightCollapsed ? 'overflow-hidden border-none' : ''}`}
+        className={`relative border-l border-[var(--border-main)] bg-[var(--bg-sidebar)] flex flex-col shrink-0 ${!isResizingRight ? 'transition-[width] duration-300 ease-in-out' : ''} ${isRightCollapsed ? 'overflow-hidden border-none' : ''}`}
       >
-        <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+        <header className={`p-6 border-b flex items-center justify-between border-[var(--border-main)]`}>
           <div className="flex items-center gap-3">
             <MessageSquare className="w-5 h-5 text-accent" />
-            <h2 className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study Assistant</h2>
+            <h2 className={`font-semibold whitespace-nowrap text-[var(--text-main)]`}>Study Assistant</h2>
           </div>
           <div className="flex items-center gap-2">
             {!isAiFullScreen && (
@@ -1675,7 +1683,7 @@ export default function App() {
           <div ref={chatEndRef} />
         </div>
 
-        <div className={`p-4 border-t ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+        <div className={`p-4 border-t border-[var(--border-main)]`}>
           <div className="relative">
             <textarea 
               value={customQuestion}
@@ -1687,7 +1695,7 @@ export default function App() {
                 }
               }}
               placeholder="Ask a question..."
-              className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-accent/50 transition-colors resize-none h-24 ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+              className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-accent/50 transition-colors resize-none h-24 bg-[var(--bg-input)] border-[var(--border-main)] text-[var(--text-main)]`}
             />
             <button 
               onClick={handleCustomQuestion}
@@ -1717,12 +1725,12 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`relative w-full max-w-md border rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#141414] border-white/10' : 'bg-white border-gray-200'}`}
+              className={`relative w-full max-w-md border rounded-2xl shadow-2xl overflow-hidden bg-[var(--bg-card)] border-[var(--border-main)]`}
             >
-              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+              <div className={`p-6 border-b flex items-center justify-between border-[var(--border-main)]`}>
                 <div className="flex items-center gap-3">
                   <StickyNote className="w-5 h-5 text-yellow-500" />
-                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <h2 className={`text-lg font-semibold text-[var(--text-main)]`}>
                     {editingBookmarkId ? 'Edit Bookmark Note' : 'Add Note to Bookmark'}
                   </h2>
                 </div>
@@ -1786,12 +1794,12 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`relative w-full max-w-2xl border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-[#141414] border-white/10' : 'bg-white border-gray-200'}`}
+              className={`relative w-full max-w-2xl border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] bg-[var(--bg-card)] border-[var(--border-main)]`}
             >
-              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+              <div className={`p-6 border-b flex items-center justify-between border-[var(--border-main)]`}>
                 <div className="flex items-center gap-3">
                   <History className="w-5 h-5 text-accent" />
-                  <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Study History</h2>
+                  <h2 className={`text-xl font-semibold text-[var(--text-main)]`}>Study History</h2>
                 </div>
                 <button 
                   onClick={() => setShowHistory(false)}
@@ -1838,12 +1846,12 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`relative w-full max-w-md border rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#141414] border-white/10' : 'bg-white border-gray-200'}`}
+              className={`relative w-full max-w-md border rounded-2xl shadow-2xl overflow-hidden bg-[var(--bg-card)] border-[var(--border-main)]`}
             >
-              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5' : 'border-gray-200'}`}>
+              <div className={`p-6 border-b flex items-center justify-between border-[var(--border-main)]`}>
                 <div className="flex items-center gap-3">
                   <Settings className="w-5 h-5 text-accent" />
-                  <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+                  <h2 className={`text-xl font-semibold text-[var(--text-main)]`}>Settings</h2>
                 </div>
                 <button 
                   onClick={() => setShowSettings(false)}
@@ -1854,21 +1862,41 @@ export default function App() {
               </div>
               <div className="p-6 space-y-6">
                 <div className="space-y-4">
-                  <h3 className={`text-sm font-medium ${isDarkMode ? 'text-white/40' : 'text-gray-400'} uppercase tracking-wider`}>Appearance</h3>
-                  <div className={`flex items-center justify-between p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'} border`}>
-                    <div className="flex items-center gap-3">
-                      {isDarkMode ? <Moon className="w-4 h-4 text-accent" /> : <Sun className="w-4 h-4 text-orange-400" />}
-                      <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Dark Mode</span>
+                  <h3 className={`text-sm font-medium ${isDarkMode ? 'text-white/40' : isSepiaMode ? 'text-[#5f4b32]/60' : 'text-gray-400'} uppercase tracking-wider`}>Appearance</h3>
+                  
+                  {/* Theme Selection */}
+                  <div className={`p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : isSepiaMode ? 'bg-[#e8dfc4] border-[#433422]/10' : 'bg-gray-50 border-gray-200'} border space-y-3`}>
+                    <div className="flex items-center gap-3 mb-1">
+                      <Palette className="w-4 h-4 text-accent" />
+                      <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : isSepiaMode ? 'text-[#433422]' : 'text-gray-900'}`}>Theme</span>
                     </div>
-                    <button 
-                      onClick={() => setIsDarkMode(!isDarkMode)}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-accent' : 'bg-gray-300'}`}
-                    >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDarkMode ? 'right-1' : 'left-1'}`} />
-                    </button>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'light', label: 'Light', icon: Sun, color: 'bg-white border-gray-200 text-gray-900' },
+                        { id: 'dark', label: 'Dark', icon: Moon, color: 'bg-[#0A0A0A] border-white/10 text-white' },
+                        { id: 'sepia', label: 'Sepia', icon: Eye, color: 'bg-[#f4ecd8] border-[#433422]/20 text-[#433422]' }
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setTheme(t.id as any)}
+                          className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                            theme === t.id 
+                              ? 'border-accent bg-accent/5' 
+                              : `border-transparent ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-black/5'}`
+                          }`}
+                        >
+                          <div className={`w-full aspect-video rounded-lg border ${t.color} flex items-center justify-center`}>
+                            <t.icon className="w-4 h-4" />
+                          </div>
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-white/60' : isSepiaMode ? 'text-[#433422]/60' : 'text-gray-500'}`}>
+                            {t.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className={`space-y-3 p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'} border`}>
+                  <div className={`space-y-3 p-4 rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : isSepiaMode ? 'bg-[#e8dfc4] border-[#433422]/10' : 'bg-gray-50 border-gray-200'} border`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Sparkles className="w-4 h-4 text-accent" />
@@ -1927,19 +1955,19 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`relative w-full max-w-sm ${isDarkMode ? 'bg-[#1A1A1A] border-white/10' : 'bg-white border-gray-200'} border rounded-2xl shadow-2xl p-6 text-center`}
+              className={`relative w-full max-w-sm bg-[var(--bg-card)] border-[var(--border-main)] border rounded-2xl shadow-2xl p-6 text-center`}
             >
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
                 <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
-              <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Clear All Study Data?</h3>
-              <p className={`text-sm ${isDarkMode ? 'text-white/40' : 'text-gray-500'} mb-6`}>
+              <h3 className={`text-lg font-semibold mb-2 text-[var(--text-main)]`}>Clear All Study Data?</h3>
+              <p className={`text-sm text-[var(--text-muted)] mb-6`}>
                 This action cannot be undone. All your chat history, bookmarks, and knowledge base tags will be permanently removed.
               </p>
               <div className="flex gap-3">
                 <button 
                   onClick={() => setShowClearConfirm(false)}
-                  className={`flex-1 px-4 py-2 rounded-xl ${isDarkMode ? 'bg-white/5 hover:bg-white/10 text-white/60' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'} transition-colors font-medium`}
+                  className={`flex-1 px-4 py-2 rounded-xl bg-[var(--bg-input)] hover:opacity-80 text-[var(--text-muted)] transition-colors font-medium`}
                 >
                   Cancel
                 </button>
@@ -1976,7 +2004,7 @@ export default function App() {
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className={`relative w-full max-w-5xl h-full flex flex-col border rounded-3xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#0F0F0F] border-white/10' : 'bg-white border-gray-200'}`}
+              className={`relative w-full max-w-5xl h-full flex flex-col border rounded-3xl shadow-2xl overflow-hidden bg-[var(--bg-card)] border-[var(--border-main)]`}
             >
               <header className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>
                 <div className="flex items-center gap-4">
@@ -2120,7 +2148,7 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className={`relative w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col ${isDarkMode ? 'bg-[#0F0F0F] border-white/10' : 'bg-white border-gray-200'} border rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)]`}
+              className={`relative w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-[var(--bg-card)] border-[var(--border-main)] border rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)]`}
             >
               {/* Header */}
               <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/[0.02]' : 'border-gray-100 bg-gray-50/50'}`}>

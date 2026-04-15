@@ -5,6 +5,41 @@
   --color-accent-foreground: var(--accent-foreground, #ffffff);
 }
 
+@layer base {
+  :root {
+    --bg-app: #ffffff;
+    --bg-sidebar: #ffffff;
+    --bg-card: #ffffff;
+    --bg-input: #f9fafb;
+    --text-main: #111827;
+    --text-muted: #6b7280;
+    --border-main: #e5e7eb;
+    --border-muted: #f3f4f6;
+  }
+
+  .dark {
+    --bg-app: #0a0a0a;
+    --bg-sidebar: #0a0a0a;
+    --bg-card: #141414;
+    --bg-input: rgba(255, 255, 255, 0.05);
+    --text-main: #ffffff;
+    --text-muted: #a1a1aa;
+    --border-main: rgba(255, 255, 255, 0.05);
+    --border-muted: rgba(255, 255, 255, 0.02);
+  }
+
+  .sepia {
+    --bg-app: #f4ecd8;
+    --bg-sidebar: #f4ecd8;
+    --bg-card: #e8dfc4;
+    --bg-input: rgba(67, 52, 34, 0.05);
+    --text-main: #433422;
+    --text-muted: #5f4b32;
+    --border-main: rgba(67, 52, 34, 0.1);
+    --border-muted: rgba(67, 52, 34, 0.05);
+  }
+}
+
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
