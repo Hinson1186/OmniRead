@@ -50,6 +50,7 @@ export const STUDY_PROMPTS = {
   CHECK_UNDERSTANDING: (text: string) => 
     `Generate one multiple-choice question to check the user's understanding of the following text. 
     The question should be challenging but fair.
+    If the content involves mathematics, science, or technical formulas, use LaTeX for all formulas (e.g., use $E=mc^2$ or $$\\frac{a}{b}$$).
     
     Format your response EXACTLY like this:
     QUESTION: [The question text]

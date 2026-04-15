@@ -25,6 +25,7 @@ import {
   Quote,
   X,
   HelpCircle,
+  GripVertical,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -1673,99 +1674,112 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="h-full flex flex-col"
+                className="h-full flex flex-col relative"
               >
+                {/* --- Quiz Overlay (Draggable & Floating) --- */}
+                <AnimatePresence>
+                  {activeQuiz && (
+                    <motion.div 
+                      drag
+                      dragMomentum={false}
+                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] w-full max-w-lg p-6 bg-[#1A1A1A]/95 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl cursor-default"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <div className="cursor-grab active:cursor-grabbing p-1 hover:bg-white/5 rounded-lg text-white/20 transition-colors">
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+                          <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                            <HelpCircle className="w-4 h-4 text-blue-400" />
+                          </div>
+                          <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Knowledge Check</span>
+                        </div>
+                        <button 
+                          onClick={() => setActiveQuiz(null)}
+                          className="p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="markdown-body text-sm font-semibold text-white mb-4 leading-relaxed">
+                        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {activeQuiz.question}
+                        </ReactMarkdown>
+                      </div>
+
+                      <div className="space-y-2 mb-4">
+                        {activeQuiz.options.map((option, idx) => {
+                          const letter = String.fromCharCode(65 + idx);
+                          const isSelected = activeQuiz.selectedAnswer === letter;
+                          const isCorrect = activeQuiz.correct === letter;
+                          const showResult = !!activeQuiz.selectedAnswer;
+
+                          let bgColor = "bg-white/5 hover:bg-white/10 border-white/5";
+                          if (showResult) {
+                            if (isCorrect) bgColor = "bg-green-500/20 border-green-500/30 text-green-400";
+                            else if (isSelected) bgColor = "bg-red-500/20 border-red-500/30 text-red-400";
+                            else bgColor = "bg-white/5 border-white/5 opacity-50";
+                          }
+
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleQuizAnswer(letter)}
+                              disabled={showResult}
+                              className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-sm transition-all ${bgColor}`}
+                            >
+                              <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold ${
+                                isSelected ? 'bg-current text-black' : 'bg-white/10 text-white/60'
+                              }`}>
+                                {letter}
+                              </span>
+                              <div className="markdown-body flex-1">
+                                <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                  {option}
+                                </ReactMarkdown>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {activeQuiz.selectedAnswer && (
+                        <motion.div 
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="p-4 rounded-2xl bg-white/5 border border-white/5"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            {activeQuiz.selectedAnswer === activeQuiz.correct ? (
+                              <Zap className="w-4 h-4 text-green-400" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-red-400" />
+                            )}
+                            <span className={`text-xs font-bold uppercase ${
+                              activeQuiz.selectedAnswer === activeQuiz.correct ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                              {activeQuiz.selectedAnswer === activeQuiz.correct ? 'Correct!' : 'Not quite'}
+                            </span>
+                          </div>
+                          <div className="markdown-body text-xs text-white/60 leading-relaxed">
+                            <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                              {activeQuiz.explanation}
+                            </ReactMarkdown>
+                          </div>
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div 
                   className={`flex-1 overflow-auto bg-[var(--bg-app)] relative`}
                   onMouseUp={handleTextSelection}
                 >
-                  {/* --- Quiz Overlay --- */}
-                  <AnimatePresence>
-                    {activeQuiz && (
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[60] w-full max-w-lg p-6 bg-[#1A1A1A]/95 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl"
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                              <HelpCircle className="w-4 h-4 text-blue-400" />
-                            </div>
-                            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Knowledge Check</span>
-                          </div>
-                          <button 
-                            onClick={() => setActiveQuiz(null)}
-                            className="p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        <h4 className="text-sm font-semibold text-white mb-4 leading-relaxed">
-                          {activeQuiz.question}
-                        </h4>
-
-                        <div className="space-y-2 mb-4">
-                          {activeQuiz.options.map((option, idx) => {
-                            const letter = String.fromCharCode(65 + idx);
-                            const isSelected = activeQuiz.selectedAnswer === letter;
-                            const isCorrect = activeQuiz.correct === letter;
-                            const showResult = !!activeQuiz.selectedAnswer;
-
-                            let bgColor = "bg-white/5 hover:bg-white/10 border-white/5";
-                            if (showResult) {
-                              if (isCorrect) bgColor = "bg-green-500/20 border-green-500/30 text-green-400";
-                              else if (isSelected) bgColor = "bg-red-500/20 border-red-500/30 text-red-400";
-                              else bgColor = "bg-white/5 border-white/5 opacity-50";
-                            }
-
-                            return (
-                              <button
-                                key={idx}
-                                onClick={() => handleQuizAnswer(letter)}
-                                disabled={showResult}
-                                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-sm transition-all ${bgColor}`}
-                              >
-                                <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold ${
-                                  isSelected ? 'bg-current text-black' : 'bg-white/10 text-white/60'
-                                }`}>
-                                  {letter}
-                                </span>
-                                {option}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {activeQuiz.selectedAnswer && (
-                          <motion.div 
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            className="p-4 rounded-2xl bg-white/5 border border-white/5"
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              {activeQuiz.selectedAnswer === activeQuiz.correct ? (
-                                <Zap className="w-4 h-4 text-green-400" />
-                              ) : (
-                                <AlertTriangle className="w-4 h-4 text-red-400" />
-                              )}
-                              <span className={`text-xs font-bold uppercase ${
-                                activeQuiz.selectedAnswer === activeQuiz.correct ? 'text-green-400' : 'text-red-400'
-                              }`}>
-                                {activeQuiz.selectedAnswer === activeQuiz.correct ? 'Correct!' : 'Not quite'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-white/60 leading-relaxed">
-                              {activeQuiz.explanation}
-                            </p>
-                          </motion.div>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
                   <PDFViewer 
                     ref={pdfViewerRef}
                     file={pdfFiles[activeFileIndex]} 
