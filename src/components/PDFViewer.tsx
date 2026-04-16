@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import * as pdfjs from 'pdfjs-dist';
-import { Bookmark, Loader2, Search, ZoomIn, ZoomOut } from 'lucide-react';
+import { Bookmark, Loader2, Search, ZoomIn, ZoomOut, ScanText } from 'lucide-react';
 import { createWorker } from 'tesseract.js';
 
 // Set up the worker
@@ -42,6 +42,57 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
   }, [pageNumber, onVisible]);
 
   const renderTaskRef = useRef<any>(null);
+  const [hasText, setHasText] = useState(true);
+
+  const performOcr = async () => {
+    if (!canvasRef.current || !textLayerRef.current || !pdf) return;
+    
+    console.log(`Starting OCR for page ${pageNumber}...`);
+    setIsOcrRunning(true);
+    setOcrProgress(0);
+    
+    try {
+      const page = await pdf.getPage(pageNumber);
+      const cssViewport = page.getViewport({ scale: scale });
+      const viewport = page.getViewport({ scale: scale * Math.max(window.devicePixelRatio || 1, 2.5) });
+
+      const worker = await createWorker(['eng'], 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
+        }
+      });
+      
+      const { data } = await worker.recognize(canvasRef.current);
+      await worker.terminate();
+      
+      // Create a custom text layer from OCR results
+      textLayerRef.current.innerHTML = '';
+      
+      const ocrScaleX = cssViewport.width / viewport.width;
+      const ocrScaleY = cssViewport.height / viewport.height;
+
+      (data as any).words.forEach((word: any) => {
+        const span = document.createElement('span');
+        span.textContent = word.text + ' ';
+        span.style.left = `${word.bbox.x0 * ocrScaleX}px`;
+        span.style.top = `${word.bbox.y0 * ocrScaleY}px`;
+        span.style.fontSize = `${(word.bbox.y1 - word.bbox.y0) * ocrScaleY}px`;
+        span.style.position = 'absolute';
+        span.style.whiteSpace = 'pre';
+        span.style.color = 'transparent';
+        span.style.cursor = 'text';
+        span.style.transformOrigin = '0% 0%';
+        textLayerRef.current?.appendChild(span);
+      });
+      setHasText(true);
+    } catch (ocrError) {
+      console.error('OCR failed:', ocrError);
+    } finally {
+      setIsOcrRunning(false);
+    }
+  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -95,6 +146,7 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
         textLayerRef.current.style.width = `${cssViewport.width}px`;
 
         if (textContent.items.length > 0) {
+          setHasText(true);
           const renderTextLayerFn = (pdfjs as any).renderTextLayer;
           if (typeof renderTextLayerFn === 'function') {
             await renderTextLayerFn({
@@ -112,56 +164,8 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
           }
         } else {
           // No text found, try OCR
-          console.log(`No text found on page ${pageNumber}, starting OCR...`);
-          setIsOcrRunning(true);
-          setOcrProgress(0);
-          
-          try {
-            const worker = await createWorker(['eng'], 1, {
-              logger: m => {
-                if (m.status === 'recognizing text') {
-                  setOcrProgress(Math.round(m.progress * 100));
-                }
-              }
-            });
-            
-            const { data } = await worker.recognize(canvas);
-            await worker.terminate();
-            
-            if (isCancelled) return;
-
-            // Create a custom text layer from OCR results
-            textLayerRef.current.innerHTML = '';
-            
-            // We need to scale the OCR coordinates back to CSS scale
-            // OCR was done on the high-res canvas (outputScale)
-            const ocrScaleX = cssViewport.width / viewport.width;
-            const ocrScaleY = cssViewport.height / viewport.height;
-
-            (data as any).words.forEach((word: any) => {
-              const span = document.createElement('span');
-              span.textContent = word.text + ' ';
-              span.style.left = `${word.bbox.x0 * ocrScaleX}px`;
-              span.style.top = `${word.bbox.y0 * ocrScaleY}px`;
-              span.style.fontSize = `${(word.bbox.y1 - word.bbox.y0) * ocrScaleY}px`;
-              span.style.position = 'absolute';
-              span.style.whiteSpace = 'pre';
-              span.style.color = 'transparent';
-              span.style.cursor = 'text';
-              span.style.transformOrigin = '0% 0%';
-              
-              // Approximate width scaling
-              const wordWidth = (word.bbox.x1 - word.bbox.x0) * ocrScaleX;
-              // We don't set width directly as it might mess up selection if font-size is different
-              // but we can use transform to match the width if needed
-              
-              textLayerRef.current?.appendChild(span);
-            });
-          } catch (ocrError) {
-            console.error('OCR failed:', ocrError);
-          } finally {
-            setIsOcrRunning(false);
-          }
+          setHasText(false);
+          performOcr();
         }
         setLoading(false);
       } catch (error: any) {
@@ -226,17 +230,29 @@ const PDFPage = ({ pdf, pageNumber, scale, isDarkMode, onVisible, isBookmarked, 
       )}
 
       {/* Bookmark Button */}
-      <button
-        onClick={() => onToggleBookmark(pageNumber)}
-        className={`absolute top-4 right-4 z-20 p-2 rounded-full transition-all transform hover:scale-110 ${
-          isBookmarked 
-            ? 'bg-accent text-accent-foreground shadow-lg' 
-            : 'bg-white/10 text-white/50 opacity-0 group-hover:opacity-100 backdrop-blur-md hover:bg-white/20'
-        }`}
-        title={isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
-      >
-        <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
-      </button>
+      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity transform">
+        <button
+          onClick={() => onToggleBookmark(pageNumber)}
+          className={`p-2 rounded-full transition-all transform hover:scale-110 ${
+            isBookmarked 
+              ? 'bg-accent text-accent-foreground shadow-lg opacity-100' 
+              : 'bg-white/10 text-white/50 backdrop-blur-md hover:bg-white/20'
+          }`}
+          style={{ opacity: isBookmarked ? 1 : undefined }}
+          title={isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
+        >
+          <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
+        </button>
+
+        <button
+          onClick={performOcr}
+          disabled={isOcrRunning}
+          className={`p-2 rounded-full transition-all transform hover:scale-110 bg-white/10 text-white/50 backdrop-blur-md hover:bg-white/20 disabled:opacity-50`}
+          title="Run OCR (Manual Text Extraction)"
+        >
+          <ScanText className="w-5 h-5" />
+        </button>
+      </div>
 
       {/* Page Number Indicator */}
       <div className={`absolute top-4 left-4 z-20 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase backdrop-blur-md border flex items-center gap-2 ${
