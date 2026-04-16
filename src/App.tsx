@@ -1839,6 +1839,27 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
+                {/* Floating Zoom Controls (Upper Part) */}
+                <div className="absolute top-4 right-4 z-40 flex items-center gap-2 p-1.5 bg-[#1A1A1A]/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
+                  <button 
+                    onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
+                    className="p-2 hover:bg-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <div className="w-12 text-center">
+                    <span className="text-[10px] font-bold text-white/80">{Math.round(scale * 100)}%</span>
+                  </div>
+                  <button 
+                    onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
+                    className="p-2 hover:bg-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                </div>
+
                 <div 
                   className={`flex-1 overflow-auto bg-[var(--bg-app)] relative`}
                   onMouseUp={handleTextSelection}
@@ -1850,7 +1871,6 @@ export default function App() {
                     isDarkMode={isDarkMode}
                     onDocumentLoad={(pages) => setNumPages(pages)} 
                     onPageChange={(page) => setCurrentPage(page)}
-                    onScaleChange={setScale}
                     jumpToPage={jumpToPage}
                     bookmarks={bookmarks.filter(b => b.fileName === pdfFiles[activeFileIndex]?.name && !b.text).map(b => b.pageNumber)}
                     onToggleBookmark={toggleBookmark}

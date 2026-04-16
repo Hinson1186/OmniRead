@@ -271,7 +271,6 @@ interface PDFViewerProps {
   isDarkMode: boolean;
   onDocumentLoad: (numPages: number) => void;
   onPageChange: (pageNumber: number) => void;
-  onScaleChange?: (scale: number) => void;
   jumpToPage?: number;
   bookmarks: number[];
   onToggleBookmark: (pageNumber: number) => void;
@@ -281,22 +280,10 @@ export interface PDFViewerRef {
   extractText: (maxPages?: number) => Promise<string>;
 }
 
-export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale, isDarkMode, onDocumentLoad, onPageChange, onScaleChange, jumpToPage, bookmarks, onToggleBookmark }, ref) => {
+export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale, isDarkMode, onDocumentLoad, onPageChange, jumpToPage, bookmarks, onToggleBookmark }, ref) => {
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleZoomIn = () => {
-    if (onScaleChange) {
-      onScaleChange(Math.min(3, scale + 0.25));
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (onScaleChange) {
-      onScaleChange(Math.max(0.5, scale - 0.25));
-    }
-  };
 
   useImperativeHandle(ref, () => ({
     extractText: async (maxPages = 5) => {
@@ -388,27 +375,6 @@ export const PDFViewer = forwardRef<PDFViewerRef, PDFViewerProps>(({ file, scale
           onToggleBookmark={onToggleBookmark}
         />
       ))}
-
-      {/* Floating Zoom Controls */}
-      <div className="fixed bottom-8 right-8 z-40 flex items-center gap-2 p-2 bg-[#1A1A1A]/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
-        <button 
-          onClick={handleZoomOut}
-          className="p-2 hover:bg-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-5 h-5" />
-        </button>
-        <div className="w-16 text-center">
-          <span className="text-xs font-bold text-white/80">{Math.round(scale * 100)}%</span>
-        </div>
-        <button 
-          onClick={handleZoomIn}
-          className="p-2 hover:bg-white/10 rounded-xl text-white/60 hover:text-white transition-colors"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-5 h-5" />
-        </button>
-      </div>
 
       <style>{`
         .textLayer {
